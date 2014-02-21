@@ -93,14 +93,14 @@
 
 (defn read-int [s]
   (when-let [int-value (parse-int s)]
-    {:type :int :value int-value}))
+    {:type :number :value int-value}))
 
 (defn read-float [s]
   (when-let [float-value (parse-float s)]
-    {:type :float :value float-value}))
+    {:type :number :value float-value}))
 
 (defn read-symbol [s]
-  {:type :symbol :source s})
+  {:type :symbol :value s})
 
 (defn read-symbol-or-number [reader]
   (let [[reader buffer] (read-token reader)]
