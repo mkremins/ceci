@@ -5,6 +5,7 @@
 (defn make-reader [source]
   {:lines (->> (string/split source #"\n")
             (map (comp vec (partial map str)))
+            (map #(conj % "\n"))
             (vec))
    :line 0 :column 0})
 
