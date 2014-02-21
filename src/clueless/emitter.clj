@@ -2,9 +2,21 @@
   (:require [clojure.string :as string]
             [clueless.reader :as rdr]))
 
-(declare emit-def emit-let emit-fn)
+(declare emit-def emit-fn)
 
 (declare emit)
+
+(defn emit-escaped [s]
+  (-> s
+    (string/replace #"\+" "_PLUS_")
+    (string/replace #"-" "_")
+    (string/replace #"\*" "_STAR_")
+    (string/replace #"/" "_SLASH_")
+    (string/replace #"\?" "_QMARK_")
+    (string/replace #"!" "_BANG_")
+    (string/replace #"<" "_LT_")
+    (string/replace #">" "_GT_")
+    (string/replace #"=" "_EQ_")))
 
 (defn emit-do [{:keys [body]}]
   (let [exprs (drop-last body)
@@ -13,6 +25,15 @@
          (string/join ";" (map emit exprs))
          ";return " (emit return-expr) ";"
          "})()")))
+
+(defn emit-let [{:keys [bindings body]}]
+  (let [exprs (drop-last body)
+        return-expr (last body)
+        emit-binding (fn [[k v]] (str "var " (emit-escaped k) "=" (emit v)))]
+    (str "(function(){"
+         (string/join ";" (concat (map emit-binding bindings)
+                                  (map emit exprs)))
+         ";return " (emit return-expr) ";})()")))
 
 (defn emit-if [{:keys [expr then else]}]
   (str "(function(){if(" (emit expr)
@@ -43,16 +64,7 @@
   (str "\"" value "\""))
 
 (defn emit-symbol [{:keys [value]}]
-  (-> value
-    (string/replace #"\+" "_PLUS_")
-    (string/replace #"-" "_")
-    (string/replace #"\*" "_STAR_")
-    (string/replace #"/" "_SLASH_")
-    (string/replace #"\?" "_QMARK_")
-    (string/replace #"!" "_BANG_")
-    (string/replace #"<" "_LT_")
-    (string/replace #">" "_GT_")
-    (string/replace #"=" "_EQ_")))
+  (emit-escaped value))
 
 (defn emit-bool [{:keys [value]}]
   (str value))

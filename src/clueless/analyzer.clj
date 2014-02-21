@@ -1,4 +1,8 @@
-(ns clueless.analyzer)
+(ns clueless.analyzer
+  (:require [clueless.reader :as rdr]))
+
+(defn analyzer-error [msg]
+  (throw (RuntimeException. msg)))
 
 (defn expand-def
   ([name] (expand-def name {:type :nil}))
@@ -9,7 +13,14 @@
 (defn expand-do [body]
   {:type :do :body body})
 
-(declare compile-bindings)
+(defn compile-bindings [bindings]
+  (if (= (:type bindings) :vector)
+    (let [bindings (rdr/expand-ast-node bindings)
+          pairs (partition 2 (:children bindings))]
+      (if (= (count (last pairs)) 2)
+        (zipmap (map (comp :value first) pairs) (map second pairs))
+        (analyzer-error "number of forms in bindings vector must be even")))
+    (analyzer-error "bindings form must be vector")))
 
 (defn expand-let [bindings body]
   {:type :let :bindings (compile-bindings bindings) :body body})
@@ -37,14 +48,14 @@
   (condp = (:type (first args))
     :vector (expand-single-clause-fn name (first args) (rest args))
     :list (expand-multi-clause-fn name args)
-    nil))
+    (analyzer-error "invalid function definition")))
 
 (defn expand-fn [& args]
   (condp = (:type (first args))
     :symbol (expand-named-fn (:value (first args)) (rest args))
     :vector (expand-single-clause-fn (make-fname) (first args) (rest args))
     :list (expand-multi-clause-fn (make-fname) args)
-    nil))
+    (analyzer-error "invalid function definition")))
 
 ;; generic interface
 
