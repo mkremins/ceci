@@ -2,7 +2,7 @@
   (:require [clojure.string :as string]
             [clueless.reader :as rdr]))
 
-(declare emit-def emit-if emit-let emit-fn)
+(declare emit-def emit-let emit-fn)
 
 (declare emit)
 
@@ -13,6 +13,11 @@
          (string/join ";" (map emit exprs))
          ";return " (emit return-expr) ";"
          "})()")))
+
+(defn emit-if [{:keys [expr then else]}]
+  (str "(function(){if(" (emit expr)
+       "){return " (emit then)
+       ";}else{return " (emit else) ";})()"))
 
 ;; list forms
 
