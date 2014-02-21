@@ -78,7 +78,7 @@
   (advance-while (complement whitespace?) reader))
 
 (defn read-keyword [reader]
-  (let [[reader buffer] (read-token reader)]
+  (let [[reader buffer] (read-token (advance reader))]
     [reader {:type :keyword :value buffer}]))
 
 (defn parse-int [s]

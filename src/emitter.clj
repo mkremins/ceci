@@ -33,7 +33,7 @@
   (str value))
 
 (defn emit-keyword [{:keys [value]}]
-  (str "new Keyword(\"" (string/join (drop 1 value)) "\")"))
+  (str "new Keyword(\"" value "\")"))
 
 (defn emit-string [{:keys [value]}]
   (str "\"" value "\""))
