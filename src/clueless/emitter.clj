@@ -2,8 +2,6 @@
   (:require [clojure.string :as string]
             [clueless.reader :as rdr]))
 
-(declare emit-def emit-fn)
-
 (declare emit)
 
 (defn emit-escaped [s]
@@ -18,27 +16,56 @@
     (string/replace #">" "_GT_")
     (string/replace #"=" "_EQ_")))
 
+(defn emit-expr-block [exprs]
+  (let [body (drop-last exprs)
+        return (last exprs)]
+    (str (string/join ";" (map emit body))
+         (when (> (count body) 0) ";") "return " (emit return) ";")))
+
+;; special forms
+
+(declare emit-def)
+
 (defn emit-do [{:keys [body]}]
-  (let [exprs (drop-last body)
-        return-expr (last body)]
-    (str "(function(){"
-         (string/join ";" (map emit exprs))
-         ";return " (emit return-expr) ";"
-         "})()")))
+  (str "(function(){" (emit-expr-block body) "})()"))
 
 (defn emit-let [{:keys [bindings body]}]
-  (let [exprs (drop-last body)
-        return-expr (last body)
-        emit-binding (fn [[k v]] (str "var " (emit-escaped k) "=" (emit v)))]
+  (letfn [(emit-binding [[k v]]
+            (str "var " (emit-escaped k) "=" (emit v)))]
     (str "(function(){"
-         (string/join ";" (concat (map emit-binding bindings)
-                                  (map emit exprs)))
-         ";return " (emit return-expr) ";})()")))
+         (string/join ";" (map emit-binding bindings)) ";"
+         (emit-expr-block body) "})()")))
 
 (defn emit-if [{:keys [expr then else]}]
   (str "(function(){if(" (emit expr)
        "){return " (emit then)
        ";}else{return " (emit else) ";})()"))
+
+;; function forms
+
+(defn emit-params [params]
+  (->> (range (count params))
+    (map (fn [param-num]
+           (str "var " (emit-escaped (get params param-num))
+                "=arguments[" param-num "]")))
+    (string/join ";")))
+
+(defn emit-fn-clause [[num-params {:keys [params] :as clause}]]
+  (str "case " num-params ":" (emit-params params)
+       ";return " (emit-do clause)))
+
+(defn emit-fn [{:keys [name clauses]}]
+  (if (= (count clauses) 1)
+    (let [{:keys [params body]} (val (first clauses))]
+      (str "function " (emit-escaped name) "(){"
+           (emit-params params) ";"
+           (emit-expr-block body) "}"))
+    (str "function " (emit-escaped name) "(){"
+         "switch(arguments.length){"
+         (string/join ";" (map emit-fn-clause clauses))
+         ";default:throw new Error("
+         "\"invalid function arity (\" + arguments.length + \")\""
+         ");}}")))
 
 ;; list forms
 
@@ -74,20 +101,23 @@
 
 ;; generic interface
 
+(def emitters
+  {:list emit-list
+   :vector emit-vector
+   :map emit-map
+   :number emit-number
+   :keyword emit-keyword
+   :string emit-string
+   :symbol emit-symbol
+   :bool emit-bool
+   :nil emit-nil
+   :def emit-def
+   :do emit-do
+   :let emit-let
+   :fn emit-fn
+   :if emit-if})
+
 (defn emit [ast-node]
-  (let [{:keys [type value] :as ast-node} (rdr/expand-ast-node ast-node)]
-    (condp = type
-      :list (emit-list ast-node)
-      :vector (emit-vector ast-node)
-      :map (emit-map ast-node)
-      :number (emit-number ast-node)
-      :keyword (emit-keyword ast-node)
-      :string (emit-string ast-node)
-      :symbol (emit-symbol ast-node)
-      :bool (emit-bool ast-node)
-      :nil (emit-nil ast-node)
-      :def (emit-def ast-node)
-      :do (emit-do ast-node)
-      :let (emit-let ast-node)
-      :fn (emit-fn ast-node)
-      :if (emit-if ast-node))))
+  (let [{:keys [type] :as ast-node} (rdr/expand-ast-node ast-node)
+        emit-type (emitters type)]
+    (emit-type ast-node)))

@@ -32,17 +32,31 @@
 
 ;; fn forms
 
-(def next-fnid (atom 0))
+(def last-fnid (atom 0))
 
 (defn make-fname []
-  (str "fn_" @next-fnid)
-  (swap! next-fnid inc))
+  (str "fn_" (swap! last-fnid inc)))
 
-(defn expand-multi-clause-fn [name body-specs]
-  {:type :fn :name name :body body-specs})
+(defn expand-params [ast-node]
+  (let [{:keys [children]} (rdr/expand-ast-node ast-node)]
+    (vec (map :value children))))
+
+(defn expand-clause-dispatch [clauses]
+  (let [clauses (map (fn [{:keys [children] :as clause}]
+                       (-> clause
+                         (assoc :params (expand-params (first children)))
+                         (assoc :body (rest children))
+                         (dissoc :children)))
+                      clauses)]
+    (zipmap (map #(count (:params %)) clauses) clauses)))
+
+(defn expand-multi-clause-fn [name clauses]
+  (println (map rdr/expand-ast-node clauses))
+  {:type :fn :name name
+   :clauses (expand-clause-dispatch (map rdr/expand-ast-node clauses))})
 
 (defn expand-single-clause-fn [name params body]
-  (expand-multi-clause-fn name {:type :list :children [params body]}))
+  (expand-multi-clause-fn name [{:children params :body body}]))
 
 (defn expand-named-fn [name args]
   (condp = (:type (first args))
@@ -50,7 +64,7 @@
     :list (expand-multi-clause-fn name args)
     (analyzer-error "invalid function definition")))
 
-(defn expand-fn [& args]
+(defn expand-fn [args]
   (condp = (:type (first args))
     :symbol (expand-named-fn (:value (first args)) (rest args))
     :vector (expand-single-clause-fn (make-fname) (first args) (rest args))
