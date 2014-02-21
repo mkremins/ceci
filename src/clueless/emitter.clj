@@ -1,5 +1,6 @@
 (ns clueless.emitter
-  (:require [clojure.string :as string]))
+  (:require [clojure.string :as string]
+            [clueless.reader :as rdr]))
 
 (declare emit-def emit-if emit-let emit-fn)
 
@@ -56,19 +57,20 @@
 
 ;; generic interface
 
-(defn emit [{:keys [type value] :as ast-node}]
-  (condp = type
-    :list (emit-list ast-node)
-    :vector (emit-vector ast-node)
-    :map (emit-map ast-node)
-    :number (emit-number ast-node)
-    :keyword (emit-keyword ast-node)
-    :string (emit-string ast-node)
-    :symbol (emit-symbol ast-node)
-    :bool (emit-bool ast-node)
-    :nil (emit-nil ast-node)
-    :def (emit-def ast-node)
-    :do (emit-do ast-node)
-    :let (emit-let ast-node)
-    :fn (emit-fn ast-node)
-    :if (emit-if ast-node)))
+(defn emit [ast-node]
+  (let [{:keys [type value] :as ast-node} (rdr/expand-ast-node ast-node)]
+    (condp = type
+      :list (emit-list ast-node)
+      :vector (emit-vector ast-node)
+      :map (emit-map ast-node)
+      :number (emit-number ast-node)
+      :keyword (emit-keyword ast-node)
+      :string (emit-string ast-node)
+      :symbol (emit-symbol ast-node)
+      :bool (emit-bool ast-node)
+      :nil (emit-nil ast-node)
+      :def (emit-def ast-node)
+      :do (emit-do ast-node)
+      :let (emit-let ast-node)
+      :fn (emit-fn ast-node)
+      :if (emit-if ast-node))))
