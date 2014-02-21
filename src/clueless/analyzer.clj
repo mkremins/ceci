@@ -1,0 +1,76 @@
+(ns clueless.analyzer)
+
+(defn expand-def
+  ([name] (expand-def name {:type :nil}))
+  ([name init-val]
+    (assert (= (:type name) :symbol))
+    {:type :def :name (:value name) :value init-val}))
+
+(defn expand-do [body]
+  {:type :do :body body})
+
+(declare compile-bindings)
+
+(defn expand-let [bindings body]
+  {:type :let :bindings (compile-bindings bindings) :body body})
+
+(defn expand-if
+  ([expr then-clause] (expand-if expr then-clause {:type :nil}))
+  ([expr then-clause else-clause]
+    {:type :if :expr expr :then then-clause :else else-clause}))
+
+;; fn forms
+
+(def next-fnid (atom 0))
+
+(defn make-fname []
+  (str "fn_" @next-fnid)
+  (swap! next-fnid inc))
+
+(defn expand-multi-clause-fn [name body-specs]
+  {:type :fn :name name :body body-specs})
+
+(defn expand-single-clause-fn [name params body]
+  (expand-multi-clause-fn name {:type :list :children [params body]}))
+
+(defn expand-named-fn [name args]
+  (condp = (:type (first args))
+    :vector (expand-single-clause-fn name (first args) (rest args))
+    :list (expand-multi-clause-fn name args)
+    nil))
+
+(defn expand-fn [& args]
+  (condp = (:type (first args))
+    :symbol (expand-named-fn (:value (first args)) (rest args))
+    :vector (expand-single-clause-fn (make-fname) (first args) (rest args))
+    :list (expand-multi-clause-fn (make-fname) args)
+    nil))
+
+;; generic interface
+
+(defn expand-special-form [{:keys [children type] :as ast-node}]
+  (when (= type :list)
+    (let [first-child (first children)]
+      (when (= (:type first-child) :symbol)
+        (condp = (:value first-child)
+          "def" (expand-def (second children) (get children 2))
+          "do" (expand-do (rest children))
+          "let" (expand-let (second children) (drop 2 children))
+          "fn" (expand-fn (rest children))
+          "if" (expand-if (second children) (get children 2) (get children 3))
+          nil)))))
+
+(defn expand-literal-constant [{:keys [type value] :as ast-node}]
+  (when (= type :symbol)
+    (condp = value
+      "nil" {:type :nil}
+      "true" {:type :bool :value true}
+      "false" {:type :bool :value false}
+      nil)))
+
+(defn expand [ast-node]
+  (if-let [special-form (expand-special-form ast-node)]
+    special-form
+    (if-let [literal-constant (expand-literal-constant ast-node)]
+      literal-constant
+      ast-node)))

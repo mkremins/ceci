@@ -1,14 +1,7 @@
-(ns emitter
+(ns clueless.emitter
   (:require [clojure.string :as string]))
 
 (declare emit-def emit-if emit-let emit-fn emit-do)
-
-(def special-form
-  {"def" emit-def
-   "if"  emit-if
-   "let" emit-let
-   "fn"  emit-fn
-   "do"  emit-do})
 
 (declare emit)
 
@@ -19,10 +12,7 @@
 
 (defn emit-list [{:keys [children]}]
   (if-let [{:keys [type value] :as first-child} (first children)]
-    (if (and (= type :symbol) (special-form value))
-      (let [emit-special-form (special-form value)]
-        (emit-special-form type (rest children)))
-      (emit-fncall first-child (rest children)))
+    (emit-fncall first-child (rest children))
     "new List()"))
 
 ;; other forms
@@ -50,6 +40,12 @@
     (string/replace #">" "_GT_")
     (string/replace #"=" "_EQ_")))
 
+(defn emit-bool [{:keys [value]}]
+  (str value))
+
+(defn emit-nil [_]
+  "null")
+
 ;; generic interface
 
 (defn emit [{:keys [type value] :as ast-node}]
@@ -60,6 +56,11 @@
     :number (emit-number ast-node)
     :keyword (emit-keyword ast-node)
     :string (emit-string ast-node)
-    :symbol (if-let [emit-special-form (special-form value)]
-              (emit-special-form ast-node)
-              (emit-symbol ast-node))))
+    :symbol (emit-symbol ast-node)
+    :bool (emit-bool ast-node)
+    :nil (emit-nil ast-node)
+    :def (emit-def ast-node)
+    :do (emit-do ast-node)
+    :let (emit-let ast-node)
+    :fn (emit-fn ast-node)
+    :if (emit-if ast-node)))

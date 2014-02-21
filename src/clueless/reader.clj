@@ -1,4 +1,4 @@
-(ns reader
+(ns clueless.reader
   (:require [clojure.string :as string])
   (:refer-clojure :exclude [read-string]))
 
