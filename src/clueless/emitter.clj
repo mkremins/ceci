@@ -1,9 +1,17 @@
 (ns clueless.emitter
   (:require [clojure.string :as string]))
 
-(declare emit-def emit-if emit-let emit-fn emit-do)
+(declare emit-def emit-if emit-let emit-fn)
 
 (declare emit)
+
+(defn emit-do [{:keys [body]}]
+  (let [exprs (drop-last body)
+        return-expr (last body)]
+    (str "(function(){"
+         (string/join ";" (map emit exprs))
+         ";return " (emit return-expr) ";"
+         "})()")))
 
 ;; list forms
 
