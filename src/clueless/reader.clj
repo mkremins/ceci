@@ -2,6 +2,9 @@
   (:require [clojure.string :as string])
   (:refer-clojure :exclude [read-string]))
 
+(defn reader-error [msg]
+  (throw (RuntimeException. msg)))
+
 (defn make-reader [source]
   {:lines (->> (string/split source #"\n")
             (map (comp vec (partial map str)))
@@ -54,6 +57,7 @@
           r-delim (if (= nesting-level 0)
                     [(advance reader) {:type type :source buffer}]
                     (recur reader buffer (dec nesting-level)))
+          nil (reader-error (str "unmatched delimiter " l-delim))
           (recur reader buffer nesting-level))))))
 
 (def read-list (partial read-delimited-form "("))
