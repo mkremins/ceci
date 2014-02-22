@@ -40,7 +40,7 @@
 (defn emit-if [{:keys [expr then else]}]
   (str "(function(){if(" (emit expr)
        "){return " (emit then)
-       ";}else{return " (emit else) ";})()"))
+       ";}else{return " (emit else) ";}})()"))
 
 ;; function forms
 
