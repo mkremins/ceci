@@ -5,12 +5,10 @@
             [clueless.reader :as rdr])
   (:refer-clojure :exclude [compile]))
 
-(defn compile [fpath]
-  (let [source (slurp fpath)
-        ast (rdr/read-code source)
-        ast2 (map ana/expand ast)
-        out (map emt/emit ast2)]
-    (println source)
-    (println ast)
-    (println ast2)
-    (println out)))
+(defn compile [in-file out-file]
+  (->> (slurp in-file)
+    (rdr/read-code)
+    (map ana/expand)
+    (map emt/emit)
+    (string/join ";\n")
+    (spit out-file)))
