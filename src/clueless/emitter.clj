@@ -24,7 +24,8 @@
 
 ;; special forms
 
-(declare emit-def)
+(defn emit-def [{:keys [name value]}]
+  (str "window." (emit-escaped name) "=" (emit value) ";"))
 
 (defn emit-do [{:keys [body]}]
   (str "(function(){" (emit-expr-block body) "})()"))
