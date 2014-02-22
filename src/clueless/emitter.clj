@@ -80,7 +80,12 @@
 
 ;; other forms
 
-(declare emit-vector emit-map)
+(declare emit-map)
+
+(defn emit-vector [{:keys [children]}]
+  (if (> (count children) 0)
+    (str "new Vector(" (->> children (map emit) (string/join ",")) ")")
+    "new Vector()"))
 
 (defn emit-number [{:keys [value]}]
   (str value))
