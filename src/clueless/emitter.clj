@@ -80,12 +80,17 @@
 
 ;; other forms
 
-(declare emit-map)
-
 (defn emit-vector [{:keys [children]}]
   (if (> (count children) 0)
     (str "new Vector(" (->> children (map emit) (string/join ",")) ")")
     "new Vector()"))
+
+(defn emit-map [{:keys [pairs]}]
+  (letfn [(emit-pair [[k v]]
+            (str "[" (emit k) "," (emit v) "]"))]
+    (if (> (count pairs) 0)
+      (str "new Map(" (->> pairs (map emit-pair) (string/join ",")) ")")
+      "new Map()")))
 
 (defn emit-number [{:keys [value]}]
   (str value))

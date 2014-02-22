@@ -93,9 +93,18 @@
       "false" {:type :bool :value false}
       nil)))
 
+(defn expand-map [{:keys [type children] :as ast-node}]
+  (when (= type :map)
+    (let [pairs (->> children (partition 2) (map vec) (vec))]
+      (if (= (count pairs) (/ (count children) 2))
+        {:type :map :pairs pairs}
+        (analyzer-error "number of forms in map literal must be even")))))
+
 (defn expand [ast-node]
   (if-let [special-form (expand-special-form ast-node)]
     special-form
     (if-let [literal-constant (expand-literal-constant ast-node)]
       literal-constant
-      ast-node)))
+      (if-let [map-literal (expand-map ast-node)]
+        map-literal
+        ast-node))))
