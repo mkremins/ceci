@@ -46,7 +46,7 @@
 (defn read-delimited-form
   ([l-delim reader]
     (read-delimited-form l-delim (matching-delimiter l-delim)
-                      (form-type l-delim) reader))
+                         (form-type l-delim) reader))
   ([l-delim r-delim type reader]
     (loop [reader reader buffer l-delim nesting-level 0]
       (let [reader (advance reader)
@@ -73,8 +73,9 @@
       (if escape-next
         (recur reader (str buffer ch) false)
         (condp = ch
+          "\"" [(advance reader) {:type :string :value buffer}]
           "\\" (recur reader buffer true)
-          "\"" [reader {:type :string :value buffer}]
+          nil (reader-error "unmatched delimiter \"")
           (recur reader (str buffer ch) false))))))
 
 ;; keyword, number and symbol forms
