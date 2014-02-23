@@ -124,6 +124,32 @@
 (defn read-whitespace [reader]
   (read-next-form (first (advance-while whitespace? reader))))
 
+;; meta forms
+
+(declare expand-ast-node)
+
+(defn meta-contents [meta-map-node]
+  (let [{:keys [children]} (expand-ast-node meta-map-node)
+        pairs (->> children (partition 2) (map vec))]
+    (if (= (count pairs) (/ (count children) 2))
+      (->> pairs
+        (map (fn [[k v]]
+               (if (= (:type k) :keyword)
+                 [(keyword (:value k)) v]
+                 (reader-error "meta keys must be keywords"))))
+        (map (fn [[k v]] [k (expand-ast-node v)]))
+        (into {}))
+      (reader-error "number of forms in map literal must be even"))))
+
+(defn read-meta [reader]
+  (let [reader (advance reader)]
+    (condp = (curr-ch reader)
+      "{" (let [[reader contents] (read-map reader)]
+            [reader {:type :meta :contents (meta-contents contents)}])
+      ":" (let [[reader kw] (read-keyword reader)]
+            [reader {:type :meta :contents {(keyword (:value kw)) true}}])
+      (reader-error "meta must be either a map or a keyword"))))
+
 ;; generic interface
 
 (defn read-next-form [reader]
@@ -139,7 +165,7 @@
         ";" (read-comment reader)
         ;"'" (read-quoted-form reader)
         ;"`" (read-syntax-quoted-form reader)
-        ;"^" (read-meta reader)
+        "^" (read-meta reader)
         ;"#" (condp = (next-ch reader)
         ;      "(" (read-anon-fn reader)
         ;      "{" (read-set reader)
