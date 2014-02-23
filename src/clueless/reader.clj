@@ -141,14 +141,16 @@
         (into {}))
       (reader-error "number of forms in map literal must be even"))))
 
+(defn expand-meta [{:keys [type value] :as meta-node}]
+  (condp = type
+    :keyword {(keyword (:value value)) true}
+    :map (meta-contents meta-node)
+    (reader-error "meta value must be keyword or map")))
+
 (defn read-meta [reader]
-  (let [reader (advance reader)]
-    (condp = (curr-ch reader)
-      "{" (let [[reader contents] (read-map reader)]
-            [reader {:type :meta :contents (meta-contents contents)}])
-      ":" (let [[reader kw] (read-keyword reader)]
-            [reader {:type :meta :contents {(keyword (:value kw)) true}}])
-      (reader-error "meta must be either a map or a keyword"))))
+  (let [[reader metadata] (read-next-form (advance reader))
+        [reader form] (read-next-form (advance reader))]
+    [reader (assoc form :meta (expand-meta metadata))]))
 
 ;; generic interface
 
@@ -170,6 +172,7 @@
         ;      "(" (read-anon-fn reader)
         ;      "{" (read-set reader)
         ;      "\"" (read-regex reader)
+        ;      "'" (read-var reader)
         ;      (read-tagged-literal reader))
         (read-symbol-or-number reader)))))
 
