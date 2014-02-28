@@ -56,7 +56,7 @@
    :clauses (expand-clause-dispatch clauses)})
 
 (defn expand-single-clause-fn [name params body]
-  (expand-multi-clause-fn name [{:children params :body body}]))
+  (expand-multi-clause-fn name [{:children (concat [params] (vec body))}]))
 
 (defn expand-named-fn [name args]
   (condp = (:type (first args))
