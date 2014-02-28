@@ -16,7 +16,7 @@
   (if (= (:type bindings) :vector)
     (let [pairs (partition 2 (:children bindings))]
       (if (= (count (last pairs)) 2)
-        (zipmap (map (comp :value first) pairs) (map second pairs))
+        (vec (map (juxt (comp :value first) second) pairs))
         (analyzer-error "number of forms in bindings vector must be even")))
     (analyzer-error "bindings form must be vector")))
 
