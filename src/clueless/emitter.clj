@@ -41,6 +41,9 @@
        "){return " (emit then)
        ";}else{return " (emit else) ";}})()"))
 
+(defn emit-js* [{:keys [value]}]
+  value)
+
 ;; function forms
 
 (defn emit-params [params]
@@ -125,7 +128,8 @@
    :do emit-do
    :let emit-let
    :fn emit-fn
-   :if emit-if})
+   :if emit-if
+   :js* emit-js*})
 
 (defn emit [{:keys [type] :as ast-node}]
   (let [emit-type (emitters type)]

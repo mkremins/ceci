@@ -28,6 +28,10 @@
   ([expr then-clause else-clause]
     {:type :if :expr expr :then then-clause :else else-clause}))
 
+(defn expand-js* [js-string]
+  (assert (= (:type js-string) :string))
+  {:type :js* :value (:value js-string)})
+
 ;; fn forms
 
 (def last-fnid (atom 0))
@@ -79,6 +83,7 @@
           "let" (expand-let (second children) (drop 2 children))
           "fn" (expand-fn (rest children))
           "if" (expand-if (second children) (get children 2) (get children 3))
+          "js*" (expand-js* (second children))
           nil)))))
 
 (defn expand-literal-constant [{:keys [type value] :as ast-node}]
