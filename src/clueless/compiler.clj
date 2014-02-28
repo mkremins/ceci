@@ -5,10 +5,12 @@
             [clueless.reader :as rdr])
   (:refer-clojure :exclude [compile]))
 
+(defn write-js [cljs-source]
+  (str (->> cljs-source
+         (rdr/read-code)
+         (map ana/expand)
+         (map emt/emit)
+         (string/join ";\n")) ";"))
+
 (defn compile [in-file out-file]
-  (->> (slurp in-file)
-    (rdr/read-code)
-    (map ana/expand)
-    (map emt/emit)
-    (string/join ";\n")
-    (spit out-file)))
+  (spit out-file (write-js (slurp in-file))))
