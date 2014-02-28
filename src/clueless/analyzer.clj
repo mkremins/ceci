@@ -108,4 +108,6 @@
       literal-constant
       (if-let [map-literal (expand-map ast-node)]
         map-literal
-        ast-node))))
+        (if (contains? ast-node :children)
+          (update-in ast-node [:children] #(vec (map expand %)))
+          ast-node)))))
