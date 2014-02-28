@@ -1,5 +1,4 @@
-(ns clueless.analyzer
-  (:require [clueless.reader :as rdr]))
+(ns clueless.analyzer)
 
 (defn analyzer-error [msg]
   (throw (RuntimeException. msg)))
@@ -15,8 +14,7 @@
 
 (defn compile-bindings [bindings]
   (if (= (:type bindings) :vector)
-    (let [bindings (rdr/expand-ast-node bindings)
-          pairs (partition 2 (:children bindings))]
+    (let [pairs (partition 2 (:children bindings))]
       (if (= (count (last pairs)) 2)
         (zipmap (map (comp :value first) pairs) (map second pairs))
         (analyzer-error "number of forms in bindings vector must be even")))
@@ -37,9 +35,8 @@
 (defn make-fname []
   (str "fn_" (swap! last-fnid inc)))
 
-(defn expand-params [ast-node]
-  (let [{:keys [children]} (rdr/expand-ast-node ast-node)]
-    (vec (map :value children))))
+(defn expand-params [{:keys [children]}]
+  (vec (map :value children)))
 
 (defn expand-clause-dispatch [clauses]
   (let [clauses (map (fn [{:keys [children] :as clause}]
@@ -51,9 +48,8 @@
     (zipmap (map #(count (:params %)) clauses) clauses)))
 
 (defn expand-multi-clause-fn [name clauses]
-  (println (map rdr/expand-ast-node clauses))
   {:type :fn :name name
-   :clauses (expand-clause-dispatch (map rdr/expand-ast-node clauses))})
+   :clauses (expand-clause-dispatch clauses)})
 
 (defn expand-single-clause-fn [name params body]
   (expand-multi-clause-fn name [{:children params :body body}]))

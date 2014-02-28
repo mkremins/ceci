@@ -185,7 +185,8 @@
 (defn expand-ast-node [{:keys [type source] :as ast-node}]
   (if (and (#{:list :vector :map} type) source)
     (let [reader (make-reader (->> source (drop 1) (drop-last) (string/join)))]
-      (assoc ast-node :children (read-all-forms reader)))
+      (assoc ast-node :children
+             (->> (read-all-forms reader) (map expand-ast-node) (vec))))
     ast-node))
 
 (defn read-code [source]

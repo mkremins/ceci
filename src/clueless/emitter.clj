@@ -1,6 +1,5 @@
 (ns clueless.emitter
-  (:require [clojure.string :as string]
-            [clueless.reader :as rdr]))
+  (:require [clojure.string :as string]))
 
 (declare emit)
 
@@ -128,7 +127,6 @@
    :fn emit-fn
    :if emit-if})
 
-(defn emit [ast-node]
-  (let [{:keys [type] :as ast-node} (rdr/expand-ast-node ast-node)
-        emit-type (emitters type)]
+(defn emit [{:keys [type] :as ast-node}]
+  (let [emit-type (emitters type)]
     (emit-type ast-node)))
