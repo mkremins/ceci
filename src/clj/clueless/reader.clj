@@ -124,9 +124,26 @@
 (defn read-whitespace [reader]
   (read-next-form (first (advance-while whitespace? reader))))
 
-;; meta forms
+;; quotation-related forms
 
 (declare expand-ast-node)
+
+(defn read-quote [reader]
+  (let [[reader form] (read-next-form (advance reader))]
+    [reader {:type :quote :value (expand-ast-node form)}]))
+
+(defn read-syntax-quote [reader]
+  (let [[reader form] (read-next-form (advance reader))]
+    [reader {:type :syntax-quote :value (expand-ast-node form)}]))
+
+(defn read-unquote [reader]
+  (let [splicing? (= (next-ch reader) "@")
+        reader (if splicing? (-> reader advance advance) (advance reader))
+        [reader form] (read-next-form reader)]
+    [reader {:type (if splicing? :unquote-splicing :unquote)
+             :value (expand-ast-node form)}]))
+
+;; meta forms
 
 (defn meta-contents [meta-map-node]
   (let [{:keys [children]} (expand-ast-node meta-map-node)
@@ -165,8 +182,9 @@
         "\"" (read-string reader)
         ":" (read-keyword reader)
         ";" (read-comment reader)
-        ;"'" (read-quoted-form reader)
-        ;"`" (read-syntax-quoted-form reader)
+        "'" (read-quote reader)
+        "`" (read-syntax-quote reader)
+        "~" (read-unquote reader)
         "^" (read-meta reader)
         ;"#" (condp = (next-ch reader)
         ;      "(" (read-anon-fn reader)
