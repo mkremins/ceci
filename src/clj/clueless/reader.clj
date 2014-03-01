@@ -68,7 +68,7 @@
   (let [[reader form] (read-delimited-form "{" (advance reader))]
     [reader (assoc form :type :set)]))
 
-;; string forms
+;; string and regex forms
 
 (defn read-string [reader]
   (loop [reader reader buffer "" escape-next false]
@@ -81,6 +81,10 @@
           "\\" (recur reader buffer true)
           nil (reader-error "unmatched delimiter \"")
           (recur reader (str buffer ch) false))))))
+
+(defn read-regex [reader]
+  (let [[reader value] (read-string (advance reader))]
+    [reader {:type :regex :value value}]))
 
 ;; keyword, number and symbol forms
 
@@ -208,7 +212,7 @@
         "#" (condp = (next-ch reader)
         ;      "(" (read-anon-fn reader)
               "{" (read-set reader)
-        ;      "\"" (read-regex reader)
+              "\"" (read-regex reader)
               "'" (read-var reader)
               (read-tagged-literal reader))
         (read-symbol-or-number reader)))))
