@@ -1,6 +1,6 @@
 (ns clueless.reader
   (:require [clojure.string :as string])
-  (:refer-clojure :exclude [read-string]))
+  (:refer-clojure :exclude [*data-readers* read-string]))
 
 (defn reader-error [msg]
   (throw (RuntimeException. msg)))
@@ -35,7 +35,7 @@
 
 (def whitespace? #{" " "\n" "\r" "\t" ","})
 
-;; braced forms (list, vector, map)
+;; delimited forms (list, vector, map, set)
 
 (def matching-delimiter
   {"(" ")" "[" "]" "{" "}"})
@@ -63,6 +63,10 @@
 (def read-list (partial read-delimited-form "("))
 (def read-vector (partial read-delimited-form "["))
 (def read-map (partial read-delimited-form "{"))
+
+(defn read-set [reader]
+  (let [[reader form] (read-delimited-form "{" (advance reader))]
+    [reader (assoc form :type :set)]))
 
 ;; string forms
 
@@ -143,6 +147,17 @@
     [reader {:type (if splicing? :unquote-splicing :unquote)
              :value (expand-ast-node form)}]))
 
+;; tagged literals
+
+(def ^:dynamic *data-readers* {})
+
+(defn read-tagged-literal [reader]
+  (let [[reader tag] (read-token (advance reader))
+        [reader form] (read-next-form reader)]
+    (if-let [tag-parser (get *data-readers* tag)]
+      [reader (tag-parser (expand-ast-node form))]
+      (reader-error (str "no registered parser for tag " tag)))))
+
 ;; meta forms
 
 (defn meta-contents [meta-map-node]
@@ -186,12 +201,12 @@
         "`" (read-syntax-quote reader)
         "~" (read-unquote reader)
         "^" (read-meta reader)
-        ;"#" (condp = (next-ch reader)
+        "#" (condp = (next-ch reader)
         ;      "(" (read-anon-fn reader)
-        ;      "{" (read-set reader)
+              "{" (read-set reader)
         ;      "\"" (read-regex reader)
         ;      "'" (read-var reader)
-        ;      (read-tagged-literal reader))
+              (read-tagged-literal reader))
         (read-symbol-or-number reader)))))
 
 (defn read-all-forms [reader]
@@ -200,8 +215,10 @@
       (recur reader (conj forms form))
       forms)))
 
+(def collection-literal? #{:list :vector :map :set})
+
 (defn expand-ast-node [{:keys [type source] :as ast-node}]
-  (if (and (#{:list :vector :map} type) source)
+  (if (and (collection-literal? type) source)
     (let [reader (make-reader (->> source (drop 1) (drop-last) (string/join)))]
       (assoc ast-node :children
              (->> (read-all-forms reader) (map expand-ast-node) (vec))))
