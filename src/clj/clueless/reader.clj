@@ -147,6 +147,10 @@
     [reader {:type (if splicing? :unquote-splicing :unquote)
              :value (expand-ast-node form)}]))
 
+(defn read-var [reader]
+  (let [[reader buffer] (read-token (-> reader advance advance))]
+    [reader {:type :var :value buffer}]))
+
 ;; tagged literals
 
 (def ^:dynamic *data-readers* {})
@@ -205,7 +209,7 @@
         ;      "(" (read-anon-fn reader)
               "{" (read-set reader)
         ;      "\"" (read-regex reader)
-        ;      "'" (read-var reader)
+              "'" (read-var reader)
               (read-tagged-literal reader))
         (read-symbol-or-number reader)))))
 
