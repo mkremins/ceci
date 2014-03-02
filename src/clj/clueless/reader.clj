@@ -35,6 +35,8 @@
 
 (def whitespace? #{" " "\n" "\r" "\t" ","})
 
+(declare expand-ast-node)
+
 ;; delimited forms (list, vector, map, set)
 
 (def matching-delimiter
@@ -67,6 +69,10 @@
 (defn read-set [reader]
   (let [[reader form] (read-delimited-form "{" (advance reader))]
     [reader (assoc form :type :set)]))
+
+(defn read-anon-fn [reader]
+  (let [[reader form] (read-delimited-form "(" (advance reader))]
+    [reader {:type :anon-fn :body (expand-ast-node form)}]))
 
 ;; string and regex forms
 
@@ -133,8 +139,6 @@
   (read-next-form (first (advance-while whitespace? reader))))
 
 ;; quotation-related forms
-
-(declare expand-ast-node)
 
 (defn read-quote [reader]
   (let [[reader form] (read-next-form (advance reader))]
@@ -210,7 +214,7 @@
         "~" (read-unquote reader)
         "^" (read-meta reader)
         "#" (condp = (next-ch reader)
-        ;      "(" (read-anon-fn reader)
+              "(" (read-anon-fn reader)
               "{" (read-set reader)
               "\"" (read-regex reader)
               "'" (read-var reader)
