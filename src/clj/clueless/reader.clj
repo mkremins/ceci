@@ -119,6 +119,13 @@
   (when-let [float-value (parse-float s)]
     {:type :number :value float-value}))
 
+(defn read-ratio [s]
+  (when-let [[numerator denominator] (string/split s #"/")]
+    (let [numerator (parse-int numerator)
+          denominator (parse-int denominator)]
+      (when (and numerator denominator)
+        {:type :number :value (float (/ numerator denominator))}))))
+
 (defn read-symbol [s]
   {:type :symbol :value s})
 
@@ -126,6 +133,7 @@
   (let [[reader buffer] (read-token reader)]
     [reader (or (read-int buffer)
                 (read-float buffer)
+                (read-ratio buffer)
                 (read-symbol buffer))]))
 
 ;; whitespace and comment forms
