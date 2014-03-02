@@ -42,7 +42,7 @@
        ";}else{return " (emit else) ";}})()"))
 
 (defn emit-js* [{:keys [value]}]
-  value)
+  (str "eval(" (emit value) ")"))
 
 ;; function forms
 

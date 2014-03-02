@@ -29,8 +29,7 @@
     {:type :if :expr expr :then then-clause :else else-clause}))
 
 (defn expand-js* [js-string]
-  (assert (= (:type js-string) :string))
-  {:type :js* :value (:value js-string)})
+  {:type :js* :value js-string})
 
 ;; fn forms
 
