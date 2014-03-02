@@ -8,7 +8,7 @@
 (defn write-js [cljs-source]
   (str (->> cljs-source
          (rdr/read-code)
-         (map ana/expand)
+         (map ana/analyze)
          (map emt/emit)
          (string/join ";\n")) ";"))
 
