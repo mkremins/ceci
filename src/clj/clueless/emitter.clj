@@ -78,21 +78,21 @@
 (defn emit-list [{:keys [children]}]
   (if-let [{:keys [type value] :as first-child} (first children)]
     (emit-fncall first-child (rest children))
-    "new List()"))
+    "List.EMPTY"))
 
 ;; other forms
 
 (defn emit-vector [{:keys [children]}]
   (if (> (count children) 0)
     (str "new Vector(" (->> children (map emit) (string/join ",")) ")")
-    "new Vector()"))
+    "Vector.EMPTY"))
 
 (defn emit-map [{:keys [pairs]}]
   (letfn [(emit-pair [[k v]]
             (str "[" (emit k) "," (emit v) "]"))]
     (if (> (count pairs) 0)
       (str "new Map(" (->> pairs (map emit-pair) (string/join ",")) ")")
-      "new Map()")))
+      "Map.EMPTY")))
 
 (defn emit-number [{:keys [value]}]
   (str value))
