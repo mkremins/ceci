@@ -44,6 +44,15 @@
 (defn emit-js* [{:keys [value]}]
   (str "eval(" (emit value) ")"))
 
+;; JS interop forms
+
+(defn emit-property-access [{:keys [property target]}]
+  (str (emit target) "." (emit-escaped property)))
+
+(defn emit-method-call [{:keys [method target args]}]
+  (str (emit target) "." (emit-escaped method)
+       "(" (string/join "," (map emit args)) ")"))
+
 ;; function forms
 
 (defn emit-params [params]
@@ -129,7 +138,9 @@
    :let emit-let
    :fn emit-fn
    :if emit-if
-   :js* emit-js*})
+   :js* emit-js*
+   :property-access emit-property-access
+   :method-call emit-method-call})
 
 (defn emit [{:keys [type] :as ast-node}]
   (let [emit-type (emitters type)]

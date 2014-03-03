@@ -70,6 +70,16 @@
     :list (analyze-multi-clause-fn (make-fname) args)
     (analyzer-error "invalid function definition")))
 
+;; JS interop forms
+
+(defn analyze-property-access [property args]
+  {:type :property-access :property property
+   :target (first args)})
+
+(defn analyze-method-call [method args]
+  {:type :method-call :method method
+   :target (first args) :args (rest args)})
+
 ;; generic interface
 
 (defn analyze-special-form [{:keys [children type] :as ast-node}]
@@ -84,6 +94,29 @@
           "if" (analyze-if (second children) (get children 2) (get children 3))
           "js*" (analyze-js* (second children))
           nil)))))
+
+(declare analyze)
+
+(defn starts-with? [s prefix]
+  (loop [s s prefix prefix]
+    (if (first prefix)
+      (if (= (first s) (first prefix))
+        (recur (rest s) (rest prefix))
+        false)
+      true)))
+
+(defn analyze-js-interop [{:keys [children type] :as ast-node}]
+  (when (= (type :list))
+    (let [first-child (first children)]
+      (when (= (:type first-child) :symbol)
+        (let [value (:value first-child)]
+          (cond (starts-with? value ".-")
+                  (analyze-property-access (apply str (drop 2 value))
+                                           (map analyze (rest children)))
+                (starts-with? value ".")
+                  (analyze-method-call (apply str (drop 1 value))
+                                       (map analyze (rest children)))
+                :else nil))))))
 
 (defn analyze-literal-constant [{:keys [type value] :as ast-node}]
   (when (= type :symbol)
@@ -103,10 +136,12 @@
 (defn analyze [ast-node]
   (if-let [special-form (analyze-special-form ast-node)]
     special-form
-    (if-let [literal-constant (analyze-literal-constant ast-node)]
-      literal-constant
-      (if-let [map-literal (analyze-map ast-node)]
-        map-literal
-        (if (contains? ast-node :children)
-          (update-in ast-node [:children] #(vec (map analyze %)))
-          ast-node)))))
+    (if-let [js-interop (analyze-js-interop ast-node)]
+      js-interop
+      (if-let [literal-constant (analyze-literal-constant ast-node)]
+        literal-constant
+        (if-let [map-literal (analyze-map ast-node)]
+          map-literal
+          (if (contains? ast-node :children)
+            (update-in ast-node [:children] #(vec (map analyze %)))
+            ast-node))))))
