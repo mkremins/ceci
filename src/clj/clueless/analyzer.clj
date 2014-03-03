@@ -1,37 +1,48 @@
 (ns clueless.analyzer)
 
-(declare analyze)
-
 (defn analyzer-error [msg]
   (throw (RuntimeException. msg)))
 
-(defn analyze-def
-  ([name] (analyze-def name {:type :nil}))
-  ([name init-val]
-    (assert (= (:type name) :symbol))
-    {:type :def :name (:value name) :value init-val}))
+;; AST creation
 
-(defn analyze-do [body]
-  {:type :do :body body})
+(defn node-type [form]
+  (cond (keyword? form) :keyword
+        (list? form) :list
+        (map? form) :map
+        (nil? form) :nil
+        (number? form) :number
+        (set? form) :set
+        (string? form) :string
+        (symbol? form) :symbol
+        (vector? form) :vector
+        :else :IDK))
 
-(defn compile-bindings [bindings]
-  (if (= (:type bindings) :vector)
-    (let [pairs (partition 2 (:children bindings))]
-      (if (= (count (last pairs)) 2)
-        (vec (map (juxt (comp :value first) second) pairs))
-        (analyzer-error "number of forms in bindings vector must be even")))
-    (analyzer-error "bindings form must be vector")))
+(defn form->ast [form]
+  (let [type (node-type form)
+        ast {:type type :form form}]
+    (if (coll? form)
+        (-> ast (assoc :op :coll) (assoc :children (map form->ast form)))
+        (-> ast (assoc :op :const)))))
 
-(defn analyze-let [bindings body]
-  {:type :let :bindings (compile-bindings bindings) :body body})
+;; def, do, if forms
 
-(defn analyze-if
-  ([expr then-clause] (analyze-if expr then-clause {:type :nil}))
-  ([expr then-clause else-clause]
-    {:type :if :expr expr :then then-clause :else else-clause}))
+(defn analyze-def [{[_ name & [init?]] :children :as ast}]
+  (-> ast
+    (assoc :op :def)
+    (assoc :name name)
+    (assoc :init (or init? {:op :const :type :nil :form nil}))))
 
-(defn analyze-js* [js-string]
-  {:type :js* :value js-string})
+(defn analyze-do [{[_ & body] :children :as ast}]
+  (-> ast
+    (assoc :op :do)
+    (assoc :body body)))
+
+(defn analyze-if [{[_ test then else] :children :as ast}]
+  (-> ast
+    (assoc :op :if)
+    (assoc :test test)
+    (assoc :then then)
+    (assoc :else else)))
 
 ;; fn forms
 
@@ -41,19 +52,19 @@
   (str "fn_" (swap! last-fnid inc)))
 
 (defn analyze-params [{:keys [children]}]
-  (vec (map :value children)))
+  (vec (map :form children)))
 
 (defn analyze-clause-dispatch [clauses]
   (let [clauses (map (fn [{:keys [children] :as clause}]
                        (-> clause
                          (assoc :params (analyze-params (first children)))
-                         (assoc :body (map analyze (rest children)))
+                         (assoc :body (rest children))
                          (dissoc :children)))
                       clauses)]
     (zipmap (map #(count (:params %)) clauses) clauses)))
 
 (defn analyze-multi-clause-fn [name clauses]
-  {:type :fn :name name
+  {:op :fn :name name
    :clauses (analyze-clause-dispatch clauses)})
 
 (defn analyze-single-clause-fn [name params body]
@@ -65,83 +76,63 @@
     :list (analyze-multi-clause-fn name args)
     (analyzer-error "invalid function definition")))
 
-(defn analyze-fn [args]
+(defn analyze-fn [{[_ & args] :children :as ast}]
   (condp = (:type (first args))
-    :symbol (analyze-named-fn (:value (first args)) (rest args))
+    :symbol (analyze-named-fn (first args) (rest args))
     :vector (analyze-single-clause-fn (make-fname) (first args) (rest args))
     :list (analyze-multi-clause-fn (make-fname) args)
     (analyzer-error "invalid function definition")))
 
-;; JS interop forms
+;; let forms
 
-(defn analyze-property-access [property args]
-  {:type :property-access :property property
-   :target (first args)})
+(defn compile-bindings [bindings]
+  (if (= (:type bindings) :vector)
+    (let [pairs (partition 2 (:children bindings))]
+      (if (= (count (last pairs)) 2)
+        (vec (map (juxt (comp :form first) second) pairs))
+        (analyzer-error "number of forms in bindings vector must be even")))
+    (analyzer-error "bindings form must be vector")))
 
-(defn analyze-method-call [method args]
-  {:type :method-call :method method
-   :target (first args) :args (rest args)})
+(defn analyze-let [{[_ bindings & body] :children :as ast}]
+  (-> ast
+    (assoc :op :let)
+    (assoc :bindings (compile-bindings bindings))
+    (assoc :body body)))
 
-;; generic interface
+;; AST analysis
 
-(defn analyze-special-form [{:keys [children type] :as ast-node}]
-  (when (= type :list)
-    (let [first-child (first children)]
-      (when (= (:type first-child) :symbol)
-        (condp = (:value first-child)
-          "def" (analyze-def (second children) (get children 2))
-          "do" (analyze-do (rest children))
-          "let" (analyze-let (second children) (drop 2 children))
-          "fn" (analyze-fn (rest children))
-          "if" (analyze-if (second children) (get children 2) (get children 3))
-          "js*" (analyze-js* (second children))
-          nil)))))
+(declare analyze)
 
-(defn starts-with? [s prefix]
-  (loop [s s prefix prefix]
-    (if (first prefix)
-      (if (= (first s) (first prefix))
-        (recur (rest s) (rest prefix))
-        false)
-      true)))
+(def specials
+  {'def analyze-def
+   'do  analyze-do
+   'fn  analyze-fn
+   'if  analyze-if
+   'let analyze-let})
 
-(defn analyze-js-interop [{:keys [children type] :as ast-node}]
-  (when (= (type :list))
-    (let [first-child (first children)]
-      (when (= (:type first-child) :symbol)
-        (let [value (:value first-child)]
-          (cond (starts-with? value ".-")
-                  (analyze-property-access (apply str (drop 2 value))
-                                           (map analyze (rest children)))
-                (starts-with? value ".")
-                  (analyze-method-call (apply str (drop 1 value))
-                                       (map analyze (rest children)))
-                :else nil))))))
+(defn analyze-list [{:keys [form] :as ast}]
+  (if-let [head (first form)]
+    (cond (symbol? head)
+          (if-let [analyze-special (specials head)]
+            (analyze-special ast)
+            ast)
+          :else ast)))
 
-(defn analyze-literal-constant [{:keys [type value] :as ast-node}]
-  (when (= type :symbol)
-    (condp = value
-      "nil" {:type :nil}
-      "true" {:type :bool :value true}
-      "false" {:type :bool :value false}
-      nil)))
+(defn analyze-coll [ast]
+  (update-in ast [:children] (partial map analyze)))
 
-(defn analyze-map [{:keys [type children] :as ast-node}]
-  (when (= type :map)
-    (let [pairs (->> children (partition 2) (map vec) (vec))]
-      (if (= (count pairs) (/ (count children) 2))
-        {:type :map :pairs pairs}
-        (analyzer-error "number of forms in map literal must be even")))))
+(defn analyze-symbol [{sym :form :as ast}]
+  (condp = sym
+    'true (-> ast (assoc :type :bool) (assoc :form true))
+    'false (-> ast (assoc :type :bool) (assoc :form false))
+    'nil (-> ast (assoc :type :nil) (assoc :form nil))
+    ast))
 
-(defn analyze [ast-node]
-  (if-let [special-form (analyze-special-form ast-node)]
-    special-form
-    (if-let [js-interop (analyze-js-interop ast-node)]
-      js-interop
-      (if-let [literal-constant (analyze-literal-constant ast-node)]
-        literal-constant
-        (if-let [map-literal (analyze-map ast-node)]
-          map-literal
-          (if (contains? ast-node :children)
-            (update-in ast-node [:children] #(vec (map analyze %)))
-            ast-node))))))
+(defn analyze [{:keys [op type] :as ast}]
+  (if (= op :coll)
+      (if (= type :list)
+          (analyze-list (analyze-coll ast))
+          (analyze-coll ast))
+      (if (= type :symbol)
+          (analyze-symbol ast)
+          ast)))
