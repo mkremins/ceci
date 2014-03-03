@@ -103,6 +103,11 @@
       (str "new Map(" (->> pairs (map emit-pair) (string/join ",")) ")")
       "Map.EMPTY")))
 
+(defn emit-set [{:keys [children]}]
+  (if (> (count children) 0)
+    (str "new Set(" (string/join "," (map emit children)) ")")
+    "Set.EMPTY"))
+
 (defn emit-number [{:keys [value]}]
   (str value))
 
@@ -127,6 +132,7 @@
   {:list emit-list
    :vector emit-vector
    :map emit-map
+   :set emit-set
    :number emit-number
    :keyword emit-keyword
    :string emit-string
