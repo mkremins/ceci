@@ -67,17 +67,20 @@
        ";return " (emit-do clause)))
 
 (defn emit-fn [{:keys [name clauses]}]
-  (if (= (count clauses) 1)
-    (let [{:keys [params body]} (val (first clauses))]
-      (str "function " (emit-escaped name) "(){"
-           (emit-params params) ";"
-           (emit-expr-block body) "}"))
-    (str "function " (emit-escaped name) "(){"
-         "switch(arguments.length){"
-         (string/join ";" (map emit-fn-clause clauses))
-         ";default:throw new Error("
-         "\"invalid function arity (\" + arguments.length + \")\""
-         ");}}")))
+  (let [name (emit-escaped name)]
+    (if (= (count clauses) 1)
+      (let [{:keys [params body]} (val (first clauses))]
+        (str "function " name "(){"
+             "var recur = " name ";"
+             (emit-params params) ";"
+             (emit-expr-block body) "}"))
+      (str "function " name "(){"
+           "var recur = " name ";"
+           "switch(arguments.length){"
+           (string/join ";" (map emit-fn-clause clauses))
+           ";default:throw new Error("
+           "\"invalid function arity (\" + arguments.length + \")\""
+           ");}}"))))
 
 ;; list forms
 
