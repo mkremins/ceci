@@ -1,5 +1,7 @@
 (ns clueless.analyzer)
 
+(declare analyze)
+
 (defn analyzer-error [msg]
   (throw (RuntimeException. msg)))
 
@@ -45,7 +47,7 @@
   (let [clauses (map (fn [{:keys [children] :as clause}]
                        (-> clause
                          (assoc :params (analyze-params (first children)))
-                         (assoc :body (rest children))
+                         (assoc :body (map analyze (rest children)))
                          (dissoc :children)))
                       clauses)]
     (zipmap (map #(count (:params %)) clauses) clauses)))
@@ -94,8 +96,6 @@
           "if" (analyze-if (second children) (get children 2) (get children 3))
           "js*" (analyze-js* (second children))
           nil)))))
-
-(declare analyze)
 
 (defn starts-with? [s prefix]
   (loop [s s prefix prefix]
