@@ -35,8 +35,6 @@
 
 (def whitespace? #{" " "\n" "\r" "\t" ","})
 
-(declare expand-ast-node)
-
 ;; delimited forms (list, vector, map, set)
 
 (def matching-delimiter
@@ -74,12 +72,8 @@
     [reader (apply hash-map children)]))
 
 (defn read-set [reader]
-  (let [[reader children] (read-delimited-forms "{" (advance reader))]
+  (let [[reader children] (read-delimited-forms "{" reader)]
     [reader (set children)]))
-
-;(defn read-anon-fn [reader]
-;  (let [[reader form] (read-delimited-forms "(" (advance reader))]
-;    [reader {:type :anon-fn :body (expand-ast-node form)}]))
 
 ;; string and regex forms
 
@@ -96,7 +90,7 @@
           (recur reader (str buffer ch) false))))))
 
 (defn read-regex [reader]
-  (let [[reader value] (read-string (advance reader))]
+  (let [[reader value] (read-string reader)]
     [reader (re-pattern value)]))
 
 ;; keyword, number and symbol forms
@@ -153,65 +147,27 @@
 (defn read-whitespace [reader]
   (read-next-form (first (advance-while whitespace? reader))))
 
-;; quotation-related forms
-
-;(defn read-quote [reader]
-;  (let [[reader form] (read-next-form (advance reader))]
-;    [reader {:type :quote :value (expand-ast-node form)}]))
-
-;(defn read-syntax-quote [reader]
-;  (let [[reader form] (read-next-form (advance reader))]
-;    [reader {:type :syntax-quote :value (expand-ast-node form)}]))
-
-;(defn read-unquote [reader]
-;  (let [splicing? (= (next-ch reader) "@")
-;        reader (if splicing? (-> reader advance advance) (advance reader))
-;        [reader form] (read-next-form reader)]
-;    [reader {:type (if splicing? :unquote-splicing :unquote)
-;             :value (expand-ast-node form)}]))
-
-;(defn read-var [reader]
-;  (let [[reader buffer] (read-token (-> reader advance advance))]
-;    [reader {:type :var :value buffer}]))
-
 ;; tagged literals
 
 (def ^:dynamic *data-readers* {})
 
 (defn read-tagged-literal [reader]
-  (let [[reader tag] (read-token (advance reader))
+  (let [[reader tag] (read-token reader)
         [reader form] (read-next-form reader)]
     (if-let [tag-parser (get *data-readers* tag)]
       [reader (tag-parser form)]
       (reader-error (str "no registered parser for tag " tag)))))
 
-;; meta forms
-
-;(defn meta-contents [meta-map-node]
-;  (let [{:keys [children]} (expand-ast-node meta-map-node)
-;        pairs (->> children (partition 2) (map vec))]
-;    (if (= (count pairs) (/ (count children) 2))
-;      (->> pairs
-;        (map (fn [[k v]]
-;               (if (= (:type k) :keyword)
-;                 [(keyword (:value k)) v]
-;                 (reader-error "meta keys must be keywords"))))
-;        (map (fn [[k v]] [k (expand-ast-node v)]))
-;        (into {}))
-;      (reader-error "number of forms in map literal must be even"))))
-
-;(defn expand-meta [{:keys [type value] :as meta-node}]
-;  (condp = type
-;    :keyword {(keyword (:value value)) true}
-;    :map (meta-contents meta-node)
-;    (reader-error "meta value must be keyword or map")))
-
-;(defn read-meta [reader]
-;  (let [[reader metadata] (read-next-form (advance reader))
-;        [reader form] (read-next-form (advance reader))]
-;    [reader (assoc form :meta (expand-meta metadata))]))
-
 ;; generic interface
+
+(defn read-dispatch [reader]
+  (condp = (curr-ch reader)
+;    "(" (read-anon-fn reader)
+    "{" (read-set reader)
+    "\"" (read-regex reader)
+;    "'" (read-var reader)
+;    "_" (read-discard reader)
+    (read-tagged-literal reader)))
 
 (defn read-next-form [reader]
   (when-let [ch (curr-ch reader)]
@@ -228,12 +184,7 @@
 ;        "`" (read-syntax-quote reader)
 ;        "~" (read-unquote reader)
 ;        "^" (read-meta reader)
-        "#" (condp = (next-ch reader)
-;              "(" (read-anon-fn reader)
-              "{" (read-set reader)
-              "\"" (read-regex reader)
-;              "'" (read-var reader)
-              (read-tagged-literal reader))
+        "#" (read-dispatch (advance reader))
         (read-symbol-or-number reader)))))
 
 (defn read-all-forms [reader]
