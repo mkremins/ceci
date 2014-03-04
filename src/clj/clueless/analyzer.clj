@@ -49,7 +49,8 @@
 (def last-fnid (atom 0))
 
 (defn make-fname []
-  (str "fn_" (swap! last-fnid inc)))
+  {:op :const :type :symbol
+   :form (symbol (str "fn_" (swap! last-fnid inc)))})
 
 (defn analyze-params [{:keys [children]}]
   (vec (map :form children)))

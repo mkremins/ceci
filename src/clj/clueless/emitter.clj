@@ -23,8 +23,8 @@
 
 ;; special forms
 
-(defn emit-def [{:keys [name value]}]
-  (str "window." (emit-escaped name) "=" (emit value)))
+(defn emit-def [{:keys [name init]}]
+  (str "window." (emit-escaped (:form name)) "=" (emit init)))
 
 (defn emit-do [{:keys [body]}]
   (str "(function(){" (emit-expr-block body) "})()"))
@@ -36,22 +36,10 @@
          (string/join ";" (map emit-binding bindings)) ";"
          (emit-expr-block body) "})()")))
 
-(defn emit-if [{:keys [expr then else]}]
-  (str "(function(){if(" (emit expr)
+(defn emit-if [{:keys [test then else]}]
+  (str "(function(){if(" (emit test)
        "){return " (emit then)
        ";}else{return " (emit else) ";}})()"))
-
-(defn emit-js* [{:keys [value]}]
-  (str "eval(" (emit value) ")"))
-
-;; JS interop forms
-
-(defn emit-property-access [{:keys [property target]}]
-  (str (emit target) "." (emit-escaped property)))
-
-(defn emit-method-call [{:keys [method target args]}]
-  (str (emit target) "." (emit-escaped method)
-       "(" (string/join "," (map emit args)) ")"))
 
 ;; function forms
 
@@ -67,7 +55,7 @@
        ";return " (emit-do clause)))
 
 (defn emit-fn [{:keys [name clauses]}]
-  (let [name (emit-escaped name)]
+  (let [name (emit-escaped (:form name))]
     (if (= (count clauses) 1)
       (let [{:keys [params body]} (val (first clauses))]
         (str "function " name "(){"
@@ -99,32 +87,30 @@
     (str "new Vector(" (->> children (map emit) (string/join ",")) ")")
     "Vector.EMPTY"))
 
-(defn emit-map [{:keys [pairs]}]
-  (letfn [(emit-pair [[k v]]
-            (str "[" (emit k) "," (emit v) "]"))]
-    (if (> (count pairs) 0)
-      (str "new Map(" (->> pairs (map emit-pair) (string/join ",")) ")")
-      "Map.EMPTY")))
+(defn emit-map [{:keys [children]}]
+  (if (> (count children) 0)
+    (str "new Map(" (->> children (map emit) (string/join ",")) ")")
+    "Map.EMPTY"))
 
 (defn emit-set [{:keys [children]}]
   (if (> (count children) 0)
     (str "new Set(" (string/join "," (map emit children)) ")")
     "Set.EMPTY"))
 
-(defn emit-number [{:keys [value]}]
-  (str value))
+(defn emit-number [{:keys [form]}]
+  (str form))
 
-(defn emit-keyword [{:keys [value]}]
-  (str "new Keyword(\"" value "\")"))
+(defn emit-keyword [{:keys [form]}]
+  (str "new Keyword(\"" (name form) "\")"))
 
-(defn emit-string [{:keys [value]}]
-  (str "\"" value "\""))
+(defn emit-string [{:keys [form]}]
+  (str "\"" form "\""))
 
-(defn emit-symbol [{:keys [value]}]
-  (emit-escaped value))
+(defn emit-symbol [{:keys [form]}]
+  (emit-escaped form))
 
-(defn emit-bool [{:keys [value]}]
-  (str value))
+(defn emit-bool [{:keys [form]}]
+  (str form))
 
 (defn emit-nil [_]
   "null")
@@ -146,11 +132,11 @@
    :do emit-do
    :let emit-let
    :fn emit-fn
-   :if emit-if
-   :js* emit-js*
-   :property-access emit-property-access
-   :method-call emit-method-call})
+   :if emit-if})
 
-(defn emit [{:keys [type] :as ast-node}]
-  (let [emit-type (emitters type)]
-    (emit-type ast-node)))
+(defn emit [{:keys [op type] :as ast-node}]
+  (if (#{:const :coll} op)
+      (let [emit-type (emitters type)]
+        (emit-type ast-node))
+      (let [emit-op (emitters op)]
+        (emit-op ast-node))))
