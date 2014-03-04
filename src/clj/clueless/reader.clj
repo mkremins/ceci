@@ -147,6 +147,22 @@
 (defn read-whitespace [reader]
   (read-next-form (first (advance-while whitespace? reader))))
 
+;; quotation-related forms
+
+(defn read-wrapped [type reader]
+  (let [[reader form] (read-next-form (advance reader))]
+    [reader (list type form)]))
+
+(def read-deref (partial read-wrapped 'deref))
+(def read-quote (partial read-wrapped 'quote))
+(def read-syntax-quote (partial read-wrapped 'syntax-quote))
+
+(defn read-unquote [reader]
+  (let [splicing? (= (next-ch reader) "@")
+        reader (if splicing? (-> reader advance advance) (advance reader))
+        [reader form] (read-next-form reader)]
+    [reader (list (if splicing? 'unquote-splice 'unquote) form)]))
+
 ;; tagged literals
 
 (def ^:dynamic *data-readers* {})
@@ -180,9 +196,10 @@
         "\"" (read-string reader)
         ":" (read-keyword reader)
         ";" (read-comment reader)
-;        "'" (read-quote reader)
-;        "`" (read-syntax-quote reader)
-;        "~" (read-unquote reader)
+        "@" (read-deref reader)
+        "'" (read-quote reader)
+        "`" (read-syntax-quote reader)
+        "~" (read-unquote reader)
 ;        "^" (read-meta reader)
         "#" (read-dispatch (advance reader))
         (read-symbol-or-number reader)))))
