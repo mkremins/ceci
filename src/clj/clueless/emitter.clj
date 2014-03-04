@@ -15,11 +15,17 @@
     (string/replace #">" "_GT_")
     (string/replace #"=" "_EQ_")))
 
+(defn emit-return [expr]
+  (str "return " (emit expr) ";"))
+
 (defn emit-expr-block [exprs]
   (let [body (drop-last exprs)
-        return (last exprs)]
+        retval (last exprs)]
     (str (string/join ";" (map emit body))
-         (when (> (count body) 0) ";") "return " (emit return) ";")))
+         (when (> (count body) 0) ";") (emit-return retval))))
+
+(defn emit-wrapped [& exprs]
+  (str "(function(){" (string/join exprs) "})()"))
 
 ;; special forms
 
@@ -27,19 +33,17 @@
   (str "window." (emit-escaped (:form name)) "=" (emit init)))
 
 (defn emit-do [{:keys [body]}]
-  (str "(function(){" (emit-expr-block body) "})()"))
+  (emit-wrapped (emit-expr-block body)))
 
 (defn emit-let [{:keys [bindings body]}]
   (letfn [(emit-binding [[k v]]
             (str "var " (emit-escaped k) "=" (emit v)))]
-    (str "(function(){"
-         (string/join ";" (map emit-binding bindings)) ";"
-         (emit-expr-block body) "})()")))
+    (emit-wrapped (string/join ";" (map emit-binding bindings)) ";"
+                  (emit-expr-block body))))
 
 (defn emit-if [{:keys [test then else]}]
-  (str "(function(){if(" (emit test)
-       "){return " (emit then)
-       ";}else{return " (emit else) ";}})()"))
+  (emit-wrapped "if(" (emit test) "){" (emit-return then)
+                "}else{" (emit-return else) "}"))
 
 ;; function forms
 
