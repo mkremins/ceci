@@ -4,7 +4,7 @@
 (declare emit)
 
 (defn emit-escaped [s]
-  (-> s
+  (-> (name s)
     (string/replace #"\+" "_PLUS_")
     (string/replace #"-" "_")
     (string/replace #"\*" "_STAR_")

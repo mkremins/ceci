@@ -3,7 +3,7 @@
   (:refer-clojure :exclude [*data-readers* read-string]))
 
 (defn reader-error [msg]
-  (throw (RuntimeException. msg)))
+  (throw (js/Error. (str "ReaderError: " msg))))
 
 (defn make-reader [source]
   {:lines (->> (string/split source #"\n")
@@ -103,39 +103,31 @@
     [reader (keyword buffer)]))
 
 (defn parse-int [s]
-  (try (Integer/parseInt s)
-    (catch NumberFormatException e
-      nil)))
+  (let [int-pattern #"^(\-|\+)?([0-9]+|Infinity)$"]
+    (when (.test int-pattern s)
+      (js/Number s))))
 
 (defn parse-float [s]
-  (try (Float/parseFloat s)
-    (catch NumberFormatException e
-      nil)))
+  (let [float-pattern #"^(\-|\+)?([0-9]+(\.[0-9]+)?|Infinity)$"]
+    (when (.test float-pattern s)
+      (js/Number s))))
 
-(defn read-int [s]
-  (when-let [int-value (parse-int s)]
-    int-value))
-
-(defn read-float [s]
-  (when-let [float-value (parse-float s)]
-    float-value))
-
-(defn read-ratio [s]
+(defn parse-ratio [s]
   (when-let [[numerator denominator] (string/split s #"/")]
     (let [numerator (parse-int numerator)
           denominator (parse-int denominator)]
       (when (and numerator denominator)
         (float (/ numerator denominator))))))
 
-(defn read-symbol [s]
+(defn parse-symbol [s]
   (symbol s))
 
 (defn read-symbol-or-number [reader]
   (let [[reader buffer] (read-token reader)]
-    [reader (or (read-int buffer)
-                (read-float buffer)
-                (read-ratio buffer)
-                (read-symbol buffer))]))
+    [reader (or (parse-int buffer)
+                (parse-float buffer)
+                (parse-ratio buffer)
+                (parse-symbol buffer))]))
 
 ;; whitespace and comment forms
 

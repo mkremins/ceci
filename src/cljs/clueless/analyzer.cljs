@@ -1,7 +1,7 @@
 (ns clueless.analyzer)
 
 (defn analyzer-error [msg]
-  (throw (RuntimeException. msg)))
+  (throw (js/Error. (str "AnalyzerError: " msg))))
 
 ;; AST creation
 
