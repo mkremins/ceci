@@ -2,6 +2,7 @@
   (:require [clojure.string :as string]
             [clueless.analyzer :as analyzer]
             [clueless.emitter :as emitter]
+            [clueless.expander :as expander]
             [clueless.reader :as reader])
   (:refer-clojure :exclude [compile slurp spit]))
 
@@ -18,6 +19,7 @@
 (defn write-js [cljs-source]
   (str (->> cljs-source
          (reader/read-code)
+         (map expander/expand-all)
          (map analyzer/form->ast)
          (map analyzer/analyze)
          (map emitter/emit)
