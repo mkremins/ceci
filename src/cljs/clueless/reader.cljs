@@ -139,6 +139,9 @@
 (defn read-whitespace [reader]
   (read-next-form (first (advance-while whitespace? reader))))
 
+(defn read-discard [reader]
+  (read-next-form (first (read-next-form (advance reader)))))
+
 ;; quotation-related forms
 
 (defn read-wrapped [type reader]
@@ -180,7 +183,7 @@
     "{" (read-set reader)
     "\"" (read-regex reader)
     "'" (read-var reader)
-;    "_" (read-discard reader)
+    "_" (read-discard reader)
     (read-tagged-literal reader)))
 
 (defn read-next-form [reader]
