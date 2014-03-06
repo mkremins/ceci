@@ -44,6 +44,11 @@
     (assoc :then then)
     (assoc :else else)))
 
+(defn analyze-quote [{[_ quoted] :children :as ast}]
+  (-> ast
+    (assoc :op :quote)
+    (assoc :quoted quoted)))
+
 ;; fn forms
 
 (def last-fnid (atom 0))
@@ -109,7 +114,8 @@
    'do  analyze-do
    'fn  analyze-fn
    'if  analyze-if
-   'let analyze-let})
+   'let analyze-let
+   'quote analyze-quote})
 
 (defn analyze-list [{:keys [form] :as ast}]
   (if-let [head (first form)]

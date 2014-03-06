@@ -45,6 +45,9 @@
   (emit-wrapped "if(" (emit test) "){" (emit-return then)
                 "}else{" (emit-return else) "}"))
 
+(defn emit-quote [{{:keys [form]} :quoted}]
+  (str "new Symbol(\"" (name form) "\")"))
+
 ;; function forms
 
 (defn emit-params [params]
@@ -134,9 +137,10 @@
    :nil emit-nil
    :def emit-def
    :do emit-do
-   :let emit-let
    :fn emit-fn
-   :if emit-if})
+   :if emit-if
+   :let emit-let
+   :quote emit-quote})
 
 (defn emit [{:keys [op type] :as ast-node}]
   (if (#{:const :coll} op)
