@@ -175,6 +175,19 @@
       [reader (tag-parser form)]
       (reader-error (str "no registered parser for tag " tag)))))
 
+;; metadata
+
+(defn read-meta [reader]
+  (let [[reader meta-form] (read-next-form (advance reader))
+        metadata (cond (map? meta-form) meta-form
+                       (symbol? meta-form) {:tag meta-form}
+                       (keyword? meta-form) {meta-form true}
+                       :else "invalid metadata shorthand")
+        [reader form] (read-next-form reader)]
+    (when-not (or (symbol? form) (coll? form))
+              (reader-error "only symbols and collections support metadata"))
+    [reader (vary-meta form merge metadata)]))
+
 ;; generic interface
 
 (defn read-dispatch [reader]
@@ -201,7 +214,7 @@
         "'" (read-quote reader)
         "`" (read-syntax-quote reader)
         "~" (read-unquote reader)
-;        "^" (read-meta reader)
+        "^" (read-meta reader)
         "#" (read-dispatch (advance reader))
         (read-symbol-or-number reader)))))
 
