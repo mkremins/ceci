@@ -155,6 +155,12 @@
         [reader form] (read-next-form reader)]
     [reader (list (if splicing? 'unquote-splice 'unquote) form)]))
 
+(defn read-var [reader]
+  (let [[reader form] (read-next-form (advance reader))]
+    (when-not (symbol? form)
+              (reader-error "can only use var syntax #' with a symbol"))
+    [reader (list 'var form)]))
+
 ;; tagged literals
 
 (def ^:dynamic *data-readers* {})
@@ -173,7 +179,7 @@
 ;    "(" (read-anon-fn reader)
     "{" (read-set reader)
     "\"" (read-regex reader)
-;    "'" (read-var reader)
+    "'" (read-var reader)
 ;    "_" (read-discard reader)
     (read-tagged-literal reader)))
 
