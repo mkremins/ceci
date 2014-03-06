@@ -8,7 +8,7 @@
 ;; metadata helpers
 
 (defn metadatable? [form]
-  (or (coll? form) (seq? form)))
+  (or (coll? form) (symbol? form)))
 
 (defn safe-merge-meta [form metadata]
   (if (metadatable? form)
