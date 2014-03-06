@@ -5,6 +5,16 @@
 
 (def macros (atom {}))
 
+;; metadata helpers
+
+(defn metadatable? [form]
+  (or (coll? form) (seq? form)))
+
+(defn safe-merge-meta [form metadata]
+  (if (metadatable? form)
+      (vary-meta form merge metadata)
+      form))
+
 ;; public API
 
 (defn expand-once
@@ -14,7 +24,8 @@
   [form]
   (if (list? form)
       (if-let [expander (get @macros (first form))]
-              (apply expander (rest form))
+              (let [metadata (meta form)]
+                (safe-merge-meta (apply expander (rest form)) metadata))
               form)
       form))
 
@@ -34,12 +45,15 @@
   "Recursively expands `form` and its children, first expanding `form` itself
   using `expand`, then (if the result is a sequential form) expanding each
   child of the result using `expand-all`."
-  (let [form (expand form)]
-    (cond (list? form) (apply list (map expand-all form))
-          (map? form) (apply hash-map (map expand-all (apply concat form)))
-          (set? form) (set (map expand-all form))
-          (vector? form) (vec (map expand-all form))
-          :else form)))
+  (let [form (expand form)
+        metadata (meta form)
+        expanded
+        (cond (list? form) (apply list (map expand-all form))
+              (map? form) (apply hash-map (map expand-all (apply concat form)))
+              (set? form) (set (map expand-all form))
+              (vector? form) (vec (map expand-all form))
+              :else form)]
+    (safe-merge-meta expanded metadata)))
 
 ;; syntax-quote
 
