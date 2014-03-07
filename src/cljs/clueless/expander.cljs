@@ -5,6 +5,9 @@
 
 (def macros (atom {}))
 
+(defn install-macro! [macro-name macro]
+  (swap! macros assoc macro-name macro))
+
 ;; metadata helpers
 
 (defn metadatable? [form]

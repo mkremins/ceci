@@ -1,4 +1,6 @@
-(ns clueless.analyzer)
+(ns clueless.analyzer
+  (:require [clueless.emitter :as emitter]
+            [clueless.expander :as expander]))
 
 (defn analyzer-error [msg]
   (throw (js/Error. (str "AnalyzerError: " msg))))
@@ -89,6 +91,14 @@
     :list (analyze-multi-clause-fn (make-fname) args)
     (analyzer-error "invalid function definition")))
 
+;; defmacro forms
+
+(defn analyze-defmacro [{[_ name-node & _] :children :as ast}]
+  (let [macro-name (:form name-node)
+        macro-node (analyze-fn ast)]
+    (expander/install-macro! macro-name (js/eval (emitter/emit macro-node)))
+    macro-node))
+
 ;; let forms
 
 (defn compile-bindings [bindings]
@@ -111,6 +121,7 @@
 
 (def specials
   {'def analyze-def
+   'defmacro analyze-defmacro
    'do  analyze-do
    'fn  analyze-fn
    'if  analyze-if
