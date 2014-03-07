@@ -96,4 +96,4 @@
         (vector? form) (cons 'concat (expand-sequence form))
         :else (expander-error "unknown collection type")))
 
-(swap! macros assoc 'syntax-quote syntax-quote)
+(install-macro! 'syntax-quote syntax-quote)
