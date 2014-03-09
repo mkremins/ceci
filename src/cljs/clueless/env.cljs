@@ -1,10 +1,6 @@
 (ns clueless.env
-  (:refer-clojure :exclude [ns ns-name resolve]))
-
-;; utils
-
-(defn update [m k f & args]
-  (apply (partial update-in m [k] f) args))
+  (:refer-clojure :exclude [ns ns-name resolve])
+  (:require [clueless.util :refer [update]]))
 
 ;; namespace management
 
