@@ -182,7 +182,7 @@
         metadata (cond (map? meta-form) meta-form
                        (symbol? meta-form) {:tag meta-form}
                        (keyword? meta-form) {meta-form true}
-                       :else "invalid metadata shorthand")
+                       :else (reader-error "invalid metadata shorthand"))
         [reader form] (read-next-form reader)]
     (when-not (or (symbol? form) (coll? form))
               (reader-error "only symbols and collections support metadata"))
