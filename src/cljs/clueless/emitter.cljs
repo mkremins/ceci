@@ -65,12 +65,12 @@
   (let [name (emit-escaped (:form name))]
     (if (= (count clauses) 1)
       (let [{:keys [params body]} (val (first clauses))]
-        (str "function " name "(){"
-             "var recur = " name ";"
+        (str "var " name "=function(){"
+             "var recur=" name ";"
              (emit-params params) ";"
              (emit-expr-block body) "}"))
-      (str "function " name "(){"
-           "var recur = " name ";"
+      (str "var " name "=function(){"
+           "var recur=" name ";"
            "switch(arguments.length){"
            (string/join ";" (map emit-fn-clause clauses))
            ";default:throw new Error("
