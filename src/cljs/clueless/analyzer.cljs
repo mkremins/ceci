@@ -21,7 +21,7 @@
 
 (defn form->ast [form]
   (let [type (node-type form)
-        ast {:type type :form form}]
+        ast {:form form :meta (meta form) :type type}]
     (if (coll? form)
         (-> ast (assoc :op :coll) (assoc :children (map form->ast form)))
         (-> ast (assoc :op :const)))))
