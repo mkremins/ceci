@@ -1,4 +1,5 @@
-(ns clueless.expander)
+(ns clueless.expander
+  (:require [clueless.util :refer [merge-meta metadatable?]]))
 
 (defn expander-error [msg]
   (throw (js/Error. (str "ExpanderError: " msg))))
@@ -7,16 +8,6 @@
 
 (defn install-macro! [macro-name macro]
   (swap! macros assoc macro-name macro))
-
-;; metadata helpers
-
-(defn metadatable? [form]
-  (or (coll? form) (symbol? form)))
-
-(defn safe-merge-meta [form metadata]
-  (if (metadatable? form)
-      (vary-meta form merge metadata)
-      form))
 
 ;; desugaring expanders
 
@@ -59,7 +50,7 @@
   [form]
   (if-let [expander (get @macros (first form))]
           (let [metadata (meta form)]
-            (safe-merge-meta (apply expander (rest form)) metadata))
+            (merge-meta (apply expander (rest form)) metadata))
           form))
 
 ;; public API
@@ -99,7 +90,7 @@
               (set? form) (set (map expand-all form))
               (vector? form) (vec (map expand-all form))
               :else form)]
-    (safe-merge-meta expanded metadata)))
+    (merge-meta expanded metadata)))
 
 ;; syntax-quote
 

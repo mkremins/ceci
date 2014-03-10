@@ -1,5 +1,6 @@
 (ns clueless.reader
-  (:require [clojure.string :as string])
+  (:require [clojure.string :as string]
+            [clueless.util :refer [merge-meta metadatable?]])
   (:refer-clojure :exclude [*data-readers* read-string]))
 
 (defn reader-error [msg]
@@ -184,7 +185,7 @@
                        (keyword? meta-form) {meta-form true}
                        :else (reader-error "invalid metadata shorthand"))
         [reader form] (read-next-form reader)]
-    (when-not (or (symbol? form) (coll? form))
+    (when-not (metadatable? form)
               (reader-error "only symbols and collections support metadata"))
     [reader (vary-meta form merge metadata)]))
 
@@ -218,11 +219,18 @@
         "#" (read-dispatch (advance reader))
         (read-symbol-or-number reader)))))
 
+(defn read-with-source-info [reader]
+  (let [[{:keys [line column] :as reader} _]
+        (advance-while whitespace? reader)]
+    (when-let [[reader form] (read-next-form reader)]
+              [reader (merge-meta form {:line (inc line)
+                                        :column (inc column)})])))
+
 (defn read-all-forms [reader]
   (loop [reader reader forms []]
-    (if-let [[reader form] (read-next-form reader)]
-      (recur reader (conj forms form))
-      forms)))
+    (if-let [[reader form] (read-with-source-info reader)]
+            (recur reader (conj forms form))
+            forms)))
 
 (defn read-code [source]
   (read-all-forms (make-reader source)))
