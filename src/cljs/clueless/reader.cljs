@@ -6,12 +6,30 @@
 (defn reader-error [msg]
   (throw (js/Error. (str "ReaderError: " msg))))
 
+;; underlying reader data structure
+
+(defn line-num [reader]
+  (+ (:line reader) (:line-offset reader) 1))
+
+(defn col-num [reader]
+  (+ (:column reader)
+     (when (= (:line reader) 0) (:column-offset reader))
+     1))
+
 (defn make-reader [source]
   {:lines (->> (string/split source #"\n")
             (map (comp vec (partial map str)))
             (map #(conj % "\n"))
             (vec))
    :line 0 :column 0})
+
+(defn make-nested-reader [parent-reader source]
+  (let [{:keys [line line-offset column column-offset]} parent-reader]
+    (-> (make-reader source)
+        (assoc :line-offset (+ line line-offset))
+        (assoc :column-offset (+ column column-offset)))))
+
+;; basic reader interface
 
 (defn advance [{:keys [lines line column] :as reader}]
   (if (get-in lines [line (inc column)])
@@ -41,24 +59,27 @@
 (def matching-delimiter
   {"(" ")" "[" "]" "{" "}"})
 
-(declare read-code)
+(declare read-all-forms)
 
 (defn read-delimited-forms
   ([l-delim reader]
     (read-delimited-forms l-delim (matching-delimiter l-delim) reader))
   ([l-delim r-delim reader]
-    (loop [reader reader buffer l-delim nesting-level 0]
-      (let [reader (advance reader)
-            ch (curr-ch reader)
-            buffer (str buffer ch)]
-        (condp = ch
-          l-delim (recur reader buffer (inc nesting-level))
-          r-delim (if (= nesting-level 0)
-                    (let [code (->> buffer (drop 1) (drop-last) (string/join))]
-                      [(advance reader) (read-code code)])
-                    (recur reader buffer (dec nesting-level)))
-          nil (reader-error (str "unmatched delimiter " l-delim))
-          (recur reader buffer nesting-level))))))
+    (let [original-reader (advance reader)]
+      (loop [reader reader buffer l-delim nesting-level 0]
+        (let [reader (advance reader)
+              ch (curr-ch reader)
+              buffer (str buffer ch)]
+          (condp = ch
+            l-delim (recur reader buffer (inc nesting-level))
+            r-delim
+            (if (= nesting-level 0)
+                (let [code (->> buffer (drop 1) (drop-last) (string/join))]
+                  [(advance reader)
+                   (read-all-forms (make-nested-reader original-reader code))])
+                (recur reader buffer (dec nesting-level)))
+            nil (reader-error (str "unmatched delimiter " l-delim))
+            (recur reader buffer nesting-level)))))))
 
 (defn read-list [reader]
   (let [[reader children] (read-delimited-forms "(" reader)]
@@ -220,11 +241,11 @@
         (read-symbol-or-number reader)))))
 
 (defn read-with-source-info [reader]
-  (let [[{:keys [line column] :as reader} _]
-        (advance-while whitespace? reader)]
+  (let [[reader _] (advance-while whitespace? reader)
+        line (line-num reader)
+        column (col-num reader)]
     (when-let [[reader form] (read-next-form reader)]
-              [reader (merge-meta form {:line (inc line)
-                                        :column (inc column)})])))
+              [reader (merge-meta form {:line line :column column})])))
 
 (defn read-all-forms [reader]
   (loop [reader reader forms []]
