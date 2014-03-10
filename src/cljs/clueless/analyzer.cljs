@@ -47,10 +47,8 @@
     (assoc :then then)
     (assoc :else else)))
 
-(defn analyze-quote [{[_ quoted] :children :as ast}]
-  (-> ast
-    (assoc :op :quote)
-    (assoc :quoted quoted)))
+(defn analyze-quote [{[_ ast] :children}]
+  (assoc-in ast [:env :quoted?] true))
 
 ;; fn forms
 
