@@ -27,7 +27,7 @@
   (let [{:keys [line line-offset column column-offset]} parent-reader]
     (-> (make-reader source)
         (assoc :line-offset (+ line line-offset))
-        (assoc :column-offset (+ column column-offset)))))
+        (assoc :column-offset (+ column (when (= line 0) column-offset))))))
 
 ;; basic reader interface
 
