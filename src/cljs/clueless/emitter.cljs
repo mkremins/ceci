@@ -27,6 +27,9 @@
 (defn emit-wrapped [& exprs]
   (str "(function(){" (string/join exprs) "})()"))
 
+(defn emit-args [args]
+  (->> args (map emit) (string/join ",")))
+
 ;; special forms
 
 (defn emit-def [{:keys [name init]}]
@@ -79,27 +82,29 @@
 (defn emit-fncall [callable args]
   (str (emit callable) ".call(null," (string/join "," (map emit args)) ")"))
 
-(defn emit-list [{:keys [children]}]
+(defn emit-list [{:keys [children] {:keys [quoted?]} :env}]
   (if-let [{:keys [type value] :as first-child} (first children)]
-    (emit-fncall first-child (rest children))
+    (if quoted?
+        (str "new List(" (emit-args children) ")")
+        (emit-fncall first-child (rest children)))
     "List.EMPTY"))
 
 ;; other forms
 
 (defn emit-vector [{:keys [children]}]
   (if (> (count children) 0)
-    (str "new Vector(" (->> children (map emit) (string/join ",")) ")")
-    "Vector.EMPTY"))
+      (str "new Vector(" (emit-args children) ")")
+      "Vector.EMPTY"))
 
 (defn emit-map [{:keys [children]}]
   (if (> (count children) 0)
-    (str "new Map(" (->> children (map emit) (string/join ",")) ")")
-    "Map.EMPTY"))
+      (str "new Map(" (emit-args children) ")")
+      "Map.EMPTY"))
 
 (defn emit-set [{:keys [children]}]
   (if (> (count children) 0)
-    (str "new Set(" (string/join "," (map emit children)) ")")
-    "Set.EMPTY"))
+      (str "new Set(" (emit-args children) ")")
+      "Set.EMPTY"))
 
 (defn emit-number [{:keys [form]}]
   (str form))
@@ -110,8 +115,10 @@
 (defn emit-string [{:keys [form]}]
   (str "\"" form "\""))
 
-(defn emit-symbol [{:keys [form]}]
-  (emit-escaped form))
+(defn emit-symbol [{:keys [form] {:keys [quoted?]} :env}]
+  (if quoted?
+      (str "new Symbol(\"" (name form) "\")")
+      (emit-escaped form)))
 
 (defn emit-bool [{:keys [form]}]
   (str form))
