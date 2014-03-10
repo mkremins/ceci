@@ -18,6 +18,50 @@
       (vary-meta form merge metadata)
       form))
 
+;; desugaring expanders
+
+(defn expand-keyword-invoke
+  "Desugars keyword invoke syntax `(:kw target)` to the canonical equivalent
+  `(get target :kw)` and returns the result."
+  [form]
+  (if-let [[kw target] form]
+          (list 'get target kw)
+          (expander-error "invalid keyword invoke syntax")))
+
+(defn expand-field-access [field-name target]
+  (list '. target field-name))
+
+(defn expand-method-invoke [method-name [target & args]]
+  (apply list (concat ['. target method-name] args)))
+
+(defn expand-js-interop
+  "Assumes `form` is a list form with at least one element. If `(first form)`
+  is a symbol that starts with the `.` (interop) character, desugars `form` to
+  canonical interop syntax and returns the result. Otherwise, returns `form`."
+  [[head & args :as form]]
+  (assert (not (empty? args)))
+  (let [head (name head)
+        interop-part (symbol (apply str (rest head)))]
+    (if (and (= (first head) ".") (not= head "."))
+        (if (= (second head) "-")
+            (if (= (count args) 1)
+                (expand-field-access interop-part (first args))
+                (expander-error "invalid field access syntax"))
+            (expand-method-invoke interop-part args))
+        form)))
+
+;; macro expanders
+
+(defn expand-macro
+  "Assumes `form` is a list form. If `(first form)` names a macro that has been
+  installed using `install-macro!`, retrieves the named macro and uses it to
+  expand `form`, returning the result. Otherwise, returns `form`."
+  [form]
+  (if-let [expander (get @macros (first form))]
+          (let [metadata (meta form)]
+            (safe-merge-meta (apply expander (rest form)) metadata))
+          form))
+
 ;; public API
 
 (defn expand-once
@@ -26,10 +70,9 @@
   of `form` and returns the result; otherwise, returns `form`."
   [form]
   (if (list? form)
-      (if-let [expander (get @macros (first form))]
-              (let [metadata (meta form)]
-                (safe-merge-meta (apply expander (rest form)) metadata))
-              form)
+      (cond (symbol? (first form)) (-> form expand-macro expand-js-interop)
+            (keyword? (first form)) (expand-keyword-invoke form)
+            :else form)
       form))
 
 (defn expand
