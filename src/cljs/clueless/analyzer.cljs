@@ -1,6 +1,7 @@
 (ns clueless.analyzer
   (:require [clueless.emitter :as emitter]
-            [clueless.expander :as expander]))
+            [clueless.expander :as expander]
+            [clueless.util :refer [update]]))
 
 (defn analyzer-error [msg]
   (throw (js/Error. (str "AnalyzerError: " msg))))
@@ -21,34 +22,41 @@
 
 (defn form->ast [form]
   (let [type (node-type form)
-        ast {:form form :env {:locals [] :quoted? false}
-             :meta (meta form) :type type}]
+        ast {:form form :meta (meta form) :type type}]
     (if (coll? form)
         (-> ast (assoc :op :coll) (assoc :children (map form->ast form)))
         (-> ast (assoc :op :const)))))
 
+;; AST analysis
+
+(declare analyze)
+
+(def nil-ast-node
+  {:op :const :type :nil :form nil})
+
 ;; def, do, if forms
 
-(defn analyze-def [{[_ name & [init?]] :children :as ast}]
+(defn analyze-def [env {[_ name & [init?]] :children :as ast}]
   (-> ast
-    (assoc :op :def)
-    (assoc :name name)
-    (assoc :init (or init? {:op :const :type :nil :form nil}))))
+      (assoc :op :def)
+      (assoc :name name)
+      (assoc :init (analyze env (or init? nil-ast-node)))))
 
-(defn analyze-do [{[_ & body] :children :as ast}]
+(defn analyze-do [env {[_ & body] :children :as ast}]
   (-> ast
-    (assoc :op :do)
-    (assoc :body body)))
+      (assoc :op :do)
+      (assoc :body (map (partial analyze env) body))))
 
-(defn analyze-if [{[_ test then else] :children :as ast}]
+(defn analyze-if [env {[_ test then else] :children :as ast}]
   (-> ast
-    (assoc :op :if)
-    (assoc :test test)
-    (assoc :then then)
-    (assoc :else else)))
+      (assoc :op :if)
+      (assoc :test (analyze env test))
+      (assoc :then (analyze env then))
+      (assoc :else (analyze env else))))
 
-(defn analyze-quote [{[_ ast] :children}]
-  (assoc-in ast [:env :quoted?] true))
+(defn analyze-quote [env {[_ ast] :children}]
+  (let [env (assoc env :quoted? true)]
+    (analyze env ast)))
 
 ;; fn forms
 
@@ -83,7 +91,7 @@
     :list (analyze-multi-clause-fn name args)
     (analyzer-error "invalid function definition")))
 
-(defn analyze-fn [{[_ & args] :children :as ast}]
+(defn analyze-fn [env {[_ & args] :children :as ast}]
   (condp = (:type (first args))
     :symbol (analyze-named-fn (first args) (rest args))
     :vector (analyze-single-clause-fn (make-fname) (first args) (rest args))
@@ -92,9 +100,9 @@
 
 ;; defmacro forms
 
-(defn analyze-defmacro [{[_ name-node & _] :children :as ast}]
+(defn analyze-defmacro [env {[_ name-node & _] :children :as ast}]
   (let [macro-name (:form name-node)
-        macro-node (analyze-fn ast)]
+        macro-node (analyze-fn env ast)]
     (expander/install-macro! macro-name (js/eval (emitter/emit macro-node)))
     macro-node))
 
@@ -108,19 +116,22 @@
         (analyzer-error "number of forms in bindings vector must be even")))
     (analyzer-error "bindings form must be vector")))
 
-(defn analyze-let [{[_ bindings & body] :children :as ast}]
+(defn analyze-let [env {[_ bindings & body] :children :as ast}]
   (let [locals (->> (:children bindings)
                     (partition 2)
-                    (map (comp :form first)))]
+                    (map (comp :form first)))
+        env (update env :locals concat locals)]
     (-> ast
         (assoc :op :let)
         (assoc :bindings (compile-bindings bindings))
-        (assoc :body body)
-        (update-in [:env :locals] concat locals))))
+        (assoc :body (map (partial analyze env) body)))))
 
-;; AST analysis
+;; generic interface
 
-(declare analyze)
+(defn analyze-coll [env ast]
+  (-> ast
+      (assoc :env env)
+      (update :children #(map (partial analyze env) %))))
 
 (def specials
   {'def analyze-def
@@ -131,26 +142,26 @@
    'let analyze-let
    'quote analyze-quote})
 
-(defn analyze-list [{:keys [form] :as ast}]
+(defn analyze-list [env {:keys [form] :as ast}]
   (if-let [head (first form)]
-    (cond (symbol? head)
-          (if-let [analyze-special (specials head)]
-            (analyze-special ast)
-            ast)
+    (if (symbol? head)
+        (if-let [analyze-special (specials head)]
+          (analyze-special env ast)
+          (analyze-coll env ast))
+        ast)))
+
+(defn analyze-symbol [env {sym :form :as ast}]
+  (let [ast (assoc ast :env env)]
+    (condp = sym
+      'true (-> ast (assoc :type :bool) (assoc :form true))
+      'false (-> ast (assoc :type :bool) (assoc :form false))
+      'nil (-> ast (assoc :type :nil) (assoc :form nil))
+      ast)))
+
+(defn analyze
+  ([ast] (analyze {:locals [] :quoted? false} ast))
+  ([env {:keys [op type] :as ast}]
+    (cond (= type :list) (analyze-list env ast)
+          (= op :coll) (analyze-coll env ast)
+          (= type :symbol) (analyze-symbol env ast)
           :else ast)))
-
-(defn analyze-coll [ast]
-  (update-in ast [:children] (partial map analyze)))
-
-(defn analyze-symbol [{sym :form :as ast}]
-  (condp = sym
-    'true (-> ast (assoc :type :bool) (assoc :form true))
-    'false (-> ast (assoc :type :bool) (assoc :form false))
-    'nil (-> ast (assoc :type :nil) (assoc :form nil))
-    ast))
-
-(defn analyze [{:keys [op type] :as ast}]
-  (cond (= type :list) (analyze-list (analyze-coll ast))
-        (= op :coll) (analyze-coll ast)
-        (= type :symbol) (analyze-symbol ast)
-        :else ast))
