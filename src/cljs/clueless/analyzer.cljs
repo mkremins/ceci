@@ -109,10 +109,14 @@
     (analyzer-error "bindings form must be vector")))
 
 (defn analyze-let [{[_ bindings & body] :children :as ast}]
-  (-> ast
-    (assoc :op :let)
-    (assoc :bindings (compile-bindings bindings))
-    (assoc :body body)))
+  (let [locals (->> (:children bindings)
+                    (partition 2)
+                    (map (comp :form first)))]
+    (-> ast
+        (assoc :op :let)
+        (assoc :bindings (compile-bindings bindings))
+        (assoc :body body)
+        (update-in [:env :locals] concat locals))))
 
 ;; AST analysis
 
