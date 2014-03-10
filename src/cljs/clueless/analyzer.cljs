@@ -17,7 +17,7 @@
         (string? form) :string
         (symbol? form) :symbol
         (vector? form) :vector
-        :else :IDK))
+        :else (analyzer-error "unrecognized form type")))
 
 (defn form->ast [form]
   (let [type (node-type form)
