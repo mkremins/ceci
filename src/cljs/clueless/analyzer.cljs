@@ -147,10 +147,7 @@
     ast))
 
 (defn analyze [{:keys [op type] :as ast}]
-  (if (= op :coll)
-      (if (= type :list)
-          (analyze-list (analyze-coll ast))
-          (analyze-coll ast))
-      (if (= type :symbol)
-          (analyze-symbol ast)
-          ast)))
+  (cond (= type :list) (analyze-list (analyze-coll ast))
+        (= op :coll) (analyze-coll ast)
+        (= type :symbol) (analyze-symbol ast)
+        :else ast))
