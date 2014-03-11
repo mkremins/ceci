@@ -12,9 +12,10 @@
   "Desugars keyword invoke syntax `(:kw target)` to the canonical equivalent
   `(get target :kw)` and returns the result."
   [form]
-  (if-let [[kw target] form]
-          (list 'get target kw)
-          (raise "invalid keyword invoke syntax" form)))
+  (if (and (coll? form) (= (count form) 2))
+      (let [[kw target] form]
+        (list 'get target kw))
+      (raise "invalid keyword invoke syntax" form)))
 
 (defn expand-field-access [field-name target]
   (list '. target field-name))
