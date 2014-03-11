@@ -119,6 +119,9 @@
         (raise "number of forms in bindings vector must be even" bindings)))
     (raise "bindings form must be vector" bindings)))
 
+(defn analyze-bindings [env bindings]
+  (vec (map (fn [[k v]] [k (analyze env v)]) bindings)))
+
 (defn analyze-let [env {[_ bindings & body] :children :as ast}]
   (let [locals (->> (:children bindings)
                     (partition 2)
@@ -126,7 +129,7 @@
         env (update env :locals concat locals)]
     (-> ast
         (assoc :op :let)
-        (assoc :bindings (compile-bindings bindings))
+        (assoc :bindings (analyze-bindings env (compile-bindings bindings)))
         (assoc :body (map (partial analyze env) body)))))
 
 ;; generic interface
