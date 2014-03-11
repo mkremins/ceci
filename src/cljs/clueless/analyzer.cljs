@@ -120,16 +120,19 @@
     (raise "bindings form must be vector" bindings)))
 
 (defn analyze-bindings [env bindings]
-  (vec (map (fn [[k v]] [k (analyze env v)]) bindings)))
+  (loop [env env analyzed [] idx 0]
+    (if-let [[left-hand right-hand] (get bindings idx)]
+      (recur (update env :locals conj left-hand)
+             (conj analyzed [left-hand (analyze env right-hand)])
+             (inc idx))
+      [env analyzed])))
 
 (defn analyze-let [env {[_ bindings & body] :children :as ast}]
-  (let [locals (->> (:children bindings)
-                    (partition 2)
-                    (map (comp :form first)))
-        env (update env :locals concat locals)]
+  (let [bindings (compile-bindings bindings)
+        [env bindings] (analyze-bindings env bindings)]
     (-> ast
         (assoc :op :let)
-        (assoc :bindings (analyze-bindings env (compile-bindings bindings)))
+        (assoc :bindings bindings)
         (assoc :body (map (partial analyze env) body)))))
 
 ;; generic interface
