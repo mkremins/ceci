@@ -28,6 +28,12 @@
 
 (declare analyze)
 
+(def true-ast-node
+  {:op :const :type :bool :form true})
+
+(def false-ast-node
+  {:op :const :type :bool :form false})
+
 (def nil-ast-node
   {:op :const :type :nil :form nil})
 
@@ -150,9 +156,9 @@
 (defn analyze-symbol [env {sym :form :as ast}]
   (let [ast (assoc ast :env env)]
     (cond (:quoted? env) ast
-          (= sym (symbol "true")) (-> ast (assoc :type :bool) (assoc :form true))
-          (= sym (symbol "false")) (-> ast (assoc :type :bool) (assoc :form false))
-          (= sym (symbol "nil")) (-> ast (assoc :type :nil) (assoc :form nil))
+          (= sym (symbol "true")) true-ast-node
+          (= sym (symbol "false")) false-ast-node
+          (= sym (symbol "nil")) nil-ast-node
           ((set (:locals env)) sym) ast
           :else (assoc ast :form (clueless.env/resolve sym)))))
 
