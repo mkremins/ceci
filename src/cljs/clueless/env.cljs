@@ -7,23 +7,6 @@
 (def namespaces (atom {}))
 (def ns-name (atom 'user))
 
-(def core-defs
-  '[+ - * / = apply assoc assoc-in concat conj dissoc filter get get-in hash
-    hash-map into key keys keyword list map not not= print println pr prn
-    pr-str reduce reset! set str swap! update-in val vals vec vector])
-
-(defn create-ns
-  "Creates a new namespace called `name`, populated with public defs from
-  `cljs.core`, and registers the newly created namespace in the global
-  `namespaces` atom."
-  [name]
-  (let [empty-ns {:refer {}}
-        ns-spec (reduce #(update %1 :refer assoc %2 'cljs.core)
-                        empty-ns core-defs)]
-    (swap! namespaces assoc name ns-spec)))
-
-(create-ns 'user)
-
 (defn require-ns
   "Within `ns-spec`, requires the namespace `required-ns` under the alias
   `ns-alias`."
@@ -42,6 +25,23 @@
                    (map (juxt identity (constantly required-ns)))
                    (into {})))
       ns-spec))
+
+(def core-defs
+  '[+ - * / = apply assoc assoc-in concat conj dissoc filter get get-in hash
+    hash-map into key keys keyword list map not not= print println pr prn
+    pr-str reduce reset! set str swap! update-in val vals vec vector])
+
+(defn create-ns
+  "Creates a new namespace called `name`, populated with public defs from
+  `cljs.core`, and registers the newly created namespace in the global
+  `namespaces` atom."
+  [name]
+  (let [ns-spec (refer-symbols {} 'cljs.core core-defs)]
+    (swap! namespaces assoc name ns-spec)))
+
+(create-ns 'user)
+
+;; the `ns` macro
 
 (defn add-clause [ns-spec [type & body]]
   (if (= type :require)
