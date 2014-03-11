@@ -28,7 +28,7 @@
 (defn emit-wrapped [& exprs]
   (str "(function(){" (string/join exprs) "})()"))
 
-(defn emit-args [args]
+(defn comma-sep [args]
   (->> args (map emit) (string/join ",")))
 
 ;; special forms
@@ -86,43 +86,51 @@
 (defn emit-list [{:keys [children] {:keys [quoted?]} :env}]
   (if-let [{:keys [type value] :as first-child} (first children)]
     (if quoted?
-        (str "new List(" (emit-args children) ")")
+        (str "cljs.core.list(" (comma-sep children) ")")
         (emit-fncall first-child (rest children)))
-    "List.EMPTY"))
+    "cljs.core.List.EMPTY"))
 
 ;; other forms
 
 (defn emit-vector [{:keys [children]}]
-  (if (> (count children) 0)
-      (str "new Vector(" (emit-args children) ")")
-      "Vector.EMPTY"))
+  (if (empty? children)
+      "cljs.core.PersistentVector.EMPTY"
+      (str "cljs.core.PersistentVector.fromArray(["
+           (comma-sep children) "],true)")))
 
 (defn emit-map [{:keys [children]}]
-  (if (> (count children) 0)
-      (str "new Map(" (emit-args children) ")")
-      "Map.EMPTY"))
+  (if (empty? children)
+      "cljs.core.PersistentArrayMap.EMPTY"
+      (str "new cljs.core.PersistentArrayMap.fromArray(["
+           (comma-sep children) "],true,false)")))
 
 (defn emit-set [{:keys [children]}]
-  (if (> (count children) 0)
-      (str "new Set(" (emit-args children) ")")
-      "Set.EMPTY"))
+  (if (empty? children)
+      "cljs.core.PersistentHashSet.EMPTY"
+      (str "cljs.core.PersistentHashSet.fromArray(["
+           (comma-sep children) "],true)")))
 
 (defn emit-number [{:keys [form]}]
   (str form))
 
 (defn emit-keyword [{:keys [form]}]
-  (str "new Keyword(\"" (name form) "\")"))
+  (let [name (name form)]
+    (str "new cljs.core.Keyword(null,\""
+         name "\",\"" name "\"," (hash form) ")")))
 
 (defn emit-string [{:keys [form]}]
   (str "\"" form "\""))
 
 (defn emit-symbol [{:keys [form] {:keys [quoted?]} :env}]
-  (if quoted?
-      (str "new Symbol(\"" (name form) "\")")
-      (let [[ns-part? name-part] (symbol-parts form)
-            ns-part (when ns-part? (str (emit-escaped ns-part?) "."))
-            name-part (emit-escaped name-part)]
-        (str ns-part name-part))))
+  (let [[ns-part? name-part] (symbol-parts form)]
+    (if quoted?
+        (str "new cljs.core.Symbol("
+             (if ns-part? (str "\"" ns-part? "\"") "null") ",\""
+             name-part "\",\""
+             (str (when ns-part? (str ns-part? ".")) name-part) "\","
+             (hash form) ",null)")
+        (str (when ns-part? (str (emit-escaped ns-part?) "."))
+             (emit-escaped name-part)))))
 
 (defn emit-bool [{:keys [form]}]
   (str form))
