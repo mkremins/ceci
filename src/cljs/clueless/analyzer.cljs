@@ -128,8 +128,7 @@
       [env analyzed])))
 
 (defn analyze-let [env {[_ bindings & body] :children :as ast}]
-  (let [bindings (compile-bindings bindings)
-        [env bindings] (analyze-bindings env bindings)]
+  (let [[env bindings] (analyze-bindings env (compile-bindings bindings))]
     (-> ast
         (assoc :op :let)
         (assoc :bindings bindings)
