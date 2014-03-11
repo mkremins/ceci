@@ -152,11 +152,12 @@
 
 (defn analyze-symbol [env {sym :form :as ast}]
   (let [ast (assoc ast :env env)]
-    (condp = sym
-      'true (-> ast (assoc :type :bool) (assoc :form true))
-      'false (-> ast (assoc :type :bool) (assoc :form false))
-      'nil (-> ast (assoc :type :nil) (assoc :form nil))
-      ast)))
+    (cond (:quoted? env) ast
+          (= sym (symbol "true")) (-> ast (assoc :type :bool) (assoc :form true))
+          (= sym (symbol "false")) (-> ast (assoc :type :bool) (assoc :form false))
+          (= sym (symbol "nil")) (-> ast (assoc :type :nil) (assoc :form nil))
+          ((set (:locals env)) sym) ast
+          :else (assoc ast :form (clueless.env/resolve sym)))))
 
 (defn analyze
   ([ast] (analyze {:locals [] :quoted? false} ast))

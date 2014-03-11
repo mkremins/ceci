@@ -83,5 +83,5 @@
           ns-part (or (resolve-ns-alias ns-part? ns-spec)
                       (when (namespace-named ns-part?) ns-part?)
                       (resolve-defining-ns sym-part ns-spec)
-                      ns-name)]
+                      @ns-name)]
       (symbol (str ns-part "/" sym-part)))))

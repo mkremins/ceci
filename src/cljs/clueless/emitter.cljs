@@ -1,5 +1,6 @@
 (ns clueless.emitter
-  (:require [clojure.string :as string]))
+  (:require [clojure.string :as string]
+            [clueless.env :refer [symbol-parts]]))
 
 (declare emit)
 
@@ -118,7 +119,10 @@
 (defn emit-symbol [{:keys [form] {:keys [quoted?]} :env}]
   (if quoted?
       (str "new Symbol(\"" (name form) "\")")
-      (emit-escaped form)))
+      (let [[ns-part? name-part] (symbol-parts form)
+            ns-part (when ns-part? (str (emit-escaped ns-part?) "."))
+            name-part (emit-escaped name-part)]
+        (str ns-part name-part))))
 
 (defn emit-bool [{:keys [form]}]
   (str form))
