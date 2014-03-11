@@ -1,8 +1,5 @@
 (ns clueless.expander
-  (:require [clueless.util :refer [merge-meta metadatable?]]))
-
-(defn expander-error [msg]
-  (throw (js/Error. (str "ExpanderError: " msg))))
+  (:require [clueless.util :refer [merge-meta metadatable? raise]]))
 
 (def macros (atom {}))
 
@@ -17,7 +14,7 @@
   [form]
   (if-let [[kw target] form]
           (list 'get target kw)
-          (expander-error "invalid keyword invoke syntax")))
+          (raise "invalid keyword invoke syntax" form)))
 
 (defn expand-field-access [field-name target]
   (list '. target field-name))
@@ -37,7 +34,7 @@
         (if (= (second head) "-")
             (if (= (count args) 1)
                 (expand-field-access interop-part (first args))
-                (expander-error "invalid field access syntax"))
+                (raise "invalid field access syntax" form))
             (expand-method-invoke interop-part args))
         form)))
 
@@ -121,13 +118,13 @@
   [form]
   (cond (symbol? form) (list 'quote form)
         (unquote? form) (second form)
-        (unquote-splice? form) (expander-error "invalid location for ~@")
+        (unquote-splice? form) (raise "invalid location for ~@" form)
         (or (not (coll? form)) (empty? form)) form
         (list? form) (list 'apply 'list (cons 'concat (expand-sequence form)))
         (map? form) (list 'apply 'hash-map
                           (cons 'concat (expand-sequence (apply concat form))))
         (set? form) (list 'set (cons 'concat (expand-sequence form)))
         (vector? form) (cons 'concat (expand-sequence form))
-        :else (expander-error "unknown collection type")))
+        :else (raise "unknown collection type" form)))
 
 (install-macro! 'syntax-quote syntax-quote)

@@ -1,10 +1,7 @@
 (ns clueless.analyzer
   (:require [clueless.emitter :as emitter]
             [clueless.expander :as expander]
-            [clueless.util :refer [update]]))
-
-(defn analyzer-error [msg]
-  (throw (js/Error. (str "AnalyzerError: " msg))))
+            [clueless.util :refer [raise update]]))
 
 ;; AST creation
 
@@ -18,7 +15,7 @@
         (string? form) :string
         (symbol? form) :symbol
         (vector? form) :vector
-        :else (analyzer-error "unrecognized form type")))
+        :else (raise "unrecognized form type" form)))
 
 (defn form->ast [form]
   (let [type (node-type form)
@@ -89,14 +86,14 @@
   (condp = (:type (first args))
     :vector (analyze-single-clause-fn name (first args) (rest args))
     :list (analyze-multi-clause-fn name args)
-    (analyzer-error "invalid function definition")))
+    (raise "invalid function definition" name)))
 
 (defn analyze-fn [env {[_ & args] :children :as ast}]
   (condp = (:type (first args))
     :symbol (analyze-named-fn (first args) (rest args))
     :vector (analyze-single-clause-fn (make-fname) (first args) (rest args))
     :list (analyze-multi-clause-fn (make-fname) args)
-    (analyzer-error "invalid function definition")))
+    (raise "invalid function definition" (:form ast))))
 
 ;; defmacro forms
 
@@ -113,8 +110,8 @@
     (let [pairs (partition 2 (:children bindings))]
       (if (= (count (last pairs)) 2)
         (vec (map (juxt (comp :form first) second) pairs))
-        (analyzer-error "number of forms in bindings vector must be even")))
-    (analyzer-error "bindings form must be vector")))
+        (raise "number of forms in bindings vector must be even" bindings)))
+    (raise "bindings form must be vector" bindings)))
 
 (defn analyze-let [env {[_ bindings & body] :children :as ast}]
   (let [locals (->> (:children bindings)
