@@ -34,7 +34,7 @@
 ;; special forms
 
 (defn emit-def [{:keys [name init]}]
-  (str "window." (emit-escaped (:form name)) "=" (emit init)))
+  (str (emit name) "=" (emit init)))
 
 (defn emit-do [{:keys [body]}]
   (emit-wrapped (emit-expr-block body)))

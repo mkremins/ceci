@@ -36,7 +36,7 @@
 (defn analyze-def [env {[_ name & [init?]] :children :as ast}]
   (-> ast
       (assoc :op :def)
-      (assoc :name name)
+      (assoc :name (analyze env name))
       (assoc :init (analyze env (or init? nil-ast-node)))))
 
 (defn analyze-do [env {[_ & body] :children :as ast}]
