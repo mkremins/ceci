@@ -27,9 +27,11 @@
       ns-spec))
 
 (def core-defs
-  '[+ - * / = apply assoc assoc-in concat conj dissoc filter get get-in hash
-    hash-map into key keys keyword list map not not= print println pr prn
-    pr-str reduce reset! set str swap! update-in val vals vec vector])
+  '[+ - * / = apply assoc assoc-in boolean comp concat conj cons constantly
+    dissoc filter fnil get get-in hash hash-map identity interpose into juxt
+    key keys keyword keyword? list list? map map? merge nil? not not= number?
+    partial print println pr prn pr-str reduce remove reset! seq seq? set set?
+    str swap! update-in val vals vec vector vector?])
 
 (defn create-ns
   "Creates a new namespace called `name`, populated with public defs from
