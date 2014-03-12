@@ -37,6 +37,23 @@
 (def nil-ast-node
   {:op :const :type :nil :form nil})
 
+;; aget, aset (interop) forms
+
+(defn analyze-aget [env {[_ target & fields] :children :as ast}]
+  (-> ast
+      (assoc :op :aget)
+      (assoc :target (analyze env target))
+      (assoc :fields (map (partial analyze env) fields))))
+
+(defn analyze-aset [env {[_ target & fields+value] :children :as ast}]
+  (let [fields (drop-last fields+value)
+        value (last fields+value)]
+    (-> ast
+        (assoc :op :aset)
+        (assoc :target (analyze env target))
+        (assoc :fields (map (partial analyze env) fields))
+        (assoc :value (analyze env value)))))
+
 ;; def, do, if forms
 
 (defn analyze-def [env {[_ name & [init?]] :children :as ast}]
@@ -142,7 +159,9 @@
       (update :children #(map (partial analyze env) %))))
 
 (def specials
-  {'def analyze-def
+  {'aget analyze-aget
+   'aset analyze-aset
+   'def analyze-def
    'defmacro analyze-defmacro
    'do  analyze-do
    'fn  analyze-fn

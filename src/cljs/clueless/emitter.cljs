@@ -33,6 +33,13 @@
 
 ;; special forms
 
+(defn emit-aget [{:keys [target fields]}]
+  (letfn [(emit-field [field] (str "[" (emit field) "]"))]
+    (apply str (emit target) (map emit-field fields))))
+
+(defn emit-aset [{:keys [value] :as ast}]
+  (str (emit-aget ast) "=" (emit value)))
+
 (defn emit-def [{:keys [name init]}]
   (str (emit name) "=" (emit init)))
 
@@ -151,6 +158,8 @@
    :symbol emit-symbol
    :bool emit-bool
    :nil emit-nil
+   :aget emit-aget
+   :aset emit-aset
    :def emit-def
    :do emit-do
    :fn emit-fn
