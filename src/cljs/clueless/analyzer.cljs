@@ -80,43 +80,27 @@
 
 ;; fn forms
 
-(def last-fnid (atom 0))
+(defn analyze-params [env {:keys [children]}]
+  (let [params (vec (map :form children))]
+    [(update env :locals concat params) params]))
 
-(defn make-fname []
-  {:op :const :type :symbol
-   :form (symbol (str "fn_" (swap! last-fnid inc)))})
-
-(defn analyze-params [{:keys [children]}]
-  (vec (map :form children)))
-
-(defn analyze-clause-dispatch [clauses]
-  (let [clauses (map (fn [{:keys [children] :as clause}]
-                       (-> clause
-                         (assoc :params (analyze-params (first children)))
-                         (assoc :body (rest children))
-                         (dissoc :children)))
-                      clauses)]
-    (zipmap (map #(count (:params %)) clauses) clauses)))
-
-(defn analyze-multi-clause-fn [name clauses]
-  {:op :fn :name name
-   :clauses (analyze-clause-dispatch clauses)})
-
-(defn analyze-single-clause-fn [name params body]
-  (analyze-multi-clause-fn name [{:children (concat [params] (vec body))}]))
-
-(defn analyze-named-fn [name args]
-  (condp = (:type (first args))
-    :vector (analyze-single-clause-fn name (first args) (rest args))
-    :list (analyze-multi-clause-fn name args)
-    (raise "invalid function definition" name)))
+(defn analyze-clauses [env clauses]
+  (loop [analyzed {} env env clauses clauses]
+    (if-let [[params & body] (first clauses)]
+      (let [[env params] (analyze-params env params)
+            clause {:params params :body (map (partial analyze env) body)}]
+        (recur (assoc analyzed (count params) clause) env (rest clauses)))
+      analyzed)))
 
 (defn analyze-fn [env {[_ & args] :children :as ast}]
-  (condp = (:type (first args))
-    :symbol (analyze-named-fn (first args) (rest args))
-    :vector (analyze-single-clause-fn (make-fname) (first args) (rest args))
-    :list (analyze-multi-clause-fn (make-fname) args)
-    (raise "invalid function definition" (:form ast))))
+  (let [clauses
+        (condp = (:type (first args))
+          :vector [(cons (first args) (rest args))]
+          :list (map :children args)
+          (raise "invalid function definition" (:form ast)))]
+    (-> ast
+        (assoc :op :fn)
+        (assoc :clauses (analyze-clauses env clauses)))))
 
 ;; defmacro forms
 

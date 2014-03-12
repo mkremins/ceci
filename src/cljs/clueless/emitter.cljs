@@ -59,27 +59,26 @@
 
 (defn emit-params [params]
   (->> (range (count params))
-    (map (fn [param-num]
-           (str "var " (emit-escaped (get params param-num))
-                "=arguments[" param-num "]")))
-    (string/join ";")))
+       (map (fn [param-num]
+              (str "var " (emit-escaped (get params param-num))
+                   "=arguments[" param-num "]")))
+       (string/join ";")))
 
 (defn emit-fn-clause [[num-params {:keys [params] :as clause}]]
   (str "case " num-params ":" (emit-params params)
        ";return " (emit-do clause)))
 
-(defn emit-fn [{:keys [name clauses]}]
-  (let [name (emit-escaped (:form name))]
-    (if (= (count clauses) 1)
-        (let [{:keys [params body]} (val (first clauses))]
-          (str "function(){"
-               (emit-params params) ";"
-               (emit-expr-block body) "}"))
-        (str "function(){switch(arguments.length){"
-             (string/join ";" (map emit-fn-clause clauses))
-             ";default:throw new Error("
-             "\"invalid function arity (\" + arguments.length + \")\""
-             ");}}"))))
+(defn emit-fn [{:keys [clauses]}]
+  (if (= (count clauses) 1)
+      (let [{:keys [params body]} (val (first clauses))]
+        (str "function(){"
+             (emit-params params) ";"
+             (emit-expr-block body) "}"))
+      (str "function(){switch(arguments.length){"
+           (string/join ";" (map emit-fn-clause clauses))
+           ";default:throw new Error("
+           "\"invalid function arity (\" + arguments.length + \")\""
+           ");}}")))
 
 ;; list forms
 
