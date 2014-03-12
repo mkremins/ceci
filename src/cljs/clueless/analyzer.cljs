@@ -170,12 +170,10 @@
    'quote analyze-quote})
 
 (defn analyze-list [env {:keys [form] :as ast}]
-  (if-let [head (first form)]
-    (if (symbol? head)
-        (if-let [analyze-special (specials head)]
-          (analyze-special env ast)
-          (analyze-coll env ast))
-        ast)))
+  (let [analyze-special (specials (first form))]
+    (if (and analyze-special (not (:quoted? env)))
+        (analyze-special env ast)
+        (analyze-coll env ast))))
 
 (defn analyze-symbol [env {sym :form :as ast}]
   (let [ast (assoc ast :env env)]

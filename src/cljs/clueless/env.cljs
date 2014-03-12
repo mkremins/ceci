@@ -1,6 +1,7 @@
 (ns clueless.env
   (:refer-clojure :exclude [create-ns ns ns-name resolve])
-  (:require [clueless.util :refer [update]]))
+  (:require [clojure.string :as string]
+            [clueless.util :refer [update]]))
 
 ;; namespace management
 
@@ -68,28 +69,20 @@
 ;; symbol expansion
 
 (defn symbol-parts [sym]
-  (let [sym-name (name sym)]
-    (if (= sym-name "/")
-        [nil sym] ; if the symbol is just /, return it as is
-        (let [split-idx
-              (loop [idx 0]
-                (let [curr-ch (get sym-name idx)]
-                  (cond (= curr-ch "/") idx
-                        curr-ch (recur (inc idx))
-                        :else nil)))]
-          (if split-idx
-              [(symbol (subs sym-name 0 split-idx))
-               (symbol (subs sym-name (inc split-idx)))]
-              [nil sym])))))
+  (let [sym-str (str sym)
+        parts (string/split sym-str #"/" 2)]
+    (cond (every? empty? parts) [nil "/"]
+          (= (count parts) 1) [nil (first parts)]
+          :else parts)))
 
-(defn resolve-ns-alias [ns-part? ns-spec]
-  (when ns-part? (get-in ns-spec [:require ns-part?])))
+(defn resolve-ns-alias [ns-alias ns-spec]
+  (when ns-alias (get-in ns-spec [:require (symbol ns-alias)])))
 
-(defn resolve-defining-ns [sym ns-spec]
-  (get-in ns-spec [:refer sym]))
+(defn resolve-defining-ns [sym-name ns-spec]
+  (get-in ns-spec [:refer (symbol sym-name)]))
 
 (defn namespace-named [ns-name]
-  (get @namespaces ns-name))
+  (get @namespaces (symbol ns-name)))
 
 (defn resolve
   "Given a potentially unqualified or only partly qualified symbol `sym`,
@@ -98,9 +91,10 @@
   namespace specification if none is specified)."
   ([sym] (resolve sym (namespace-named @ns-name)))
   ([sym ns-spec]
-    (let [[ns-part? sym-part] (symbol-parts sym)
-          ns-part (or (resolve-ns-alias ns-part? ns-spec)
-                      (when (namespace-named ns-part?) ns-part?)
-                      (resolve-defining-ns sym-part ns-spec)
-                      @ns-name)]
-      (symbol (str ns-part "/" sym-part)))))
+    (let [[ns-part name-part] (symbol-parts sym)
+          ns-part (or (resolve-ns-alias ns-part ns-spec)
+                      (when (or (namespace-named ns-part) (= ns-part "js"))
+                            ns-part)
+                      (resolve-defining-ns name-part ns-spec)
+                      (str @ns-name))]
+      (symbol ns-part name-part))))
