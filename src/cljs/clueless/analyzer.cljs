@@ -78,6 +78,11 @@
   (let [env (assoc env :quoted? true)]
     (analyze env ast)))
 
+(defn analyze-throw [env {[_ thrown] :children :as ast}]
+  (-> ast
+      (assoc :op :throw)
+      (assoc :thrown (analyze env thrown))))
+
 ;; fn forms
 
 (defn analyze-params [env {:keys [children]}]
@@ -147,11 +152,12 @@
    'aset analyze-aset
    'def analyze-def
    'defmacro analyze-defmacro
-   'do  analyze-do
-   'fn  analyze-fn
-   'if  analyze-if
+   'do analyze-do
+   'fn analyze-fn
+   'if analyze-if
    'let analyze-let
-   'quote analyze-quote})
+   'quote analyze-quote
+   'throw analyze-throw})
 
 (defn analyze-list [env {:keys [form] :as ast}]
   (let [analyze-special (specials (first form))]

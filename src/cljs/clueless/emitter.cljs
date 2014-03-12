@@ -55,6 +55,9 @@
   (emit-wrapped "if(" (emit test) "){" (emit-return then)
                 "}else{" (emit-return else) "}"))
 
+(defn emit-throw [{:keys [thrown]}]
+  (emit-wrapped "throw " (emit thrown) ";"))
+
 ;; function forms
 
 (defn emit-params [params]
@@ -158,7 +161,8 @@
    :do emit-do
    :fn emit-fn
    :if emit-if
-   :let emit-let})
+   :let emit-let
+   :throw emit-throw})
 
 (defn emit [{:keys [op type] :as ast-node}]
   (if (#{:const :coll} op)
