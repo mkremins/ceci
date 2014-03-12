@@ -1,36 +1,12 @@
 (ns clueless.expander
   (:require [clueless.util :refer [merge-meta metadatable? raise]]))
 
+;; macro management
+
 (def macros (atom {}))
 
 (defn install-macro! [macro-name macro]
   (swap! macros assoc macro-name macro))
-
-;; desugaring expanders
-
-(defn expand-field-access [field-name target]
-  (list '. target field-name))
-
-(defn expand-method-invoke [method-name [target & args]]
-  (apply list (concat ['. target method-name] args)))
-
-(defn expand-js-interop
-  "Assumes `form` is a list form with at least one element. If `(first form)`
-  is a symbol that starts with the `.` (interop) character, desugars `form` to
-  canonical interop syntax and returns the result. Otherwise, returns `form`."
-  [[head & args :as form]]
-  (assert (not (empty? args)))
-  (let [head (name head)
-        interop-part (symbol (apply str (rest head)))]
-    (if (and (= (first head) ".") (not= head "."))
-        (if (= (second head) "-")
-            (if (= (count args) 1)
-                (expand-field-access interop-part (first args))
-                (raise "invalid field access syntax" form))
-            (expand-method-invoke interop-part args))
-        form)))
-
-;; macro expanders
 
 (defn expand-macro
   "Assumes `form` is a list form. If `(first form)` names a macro that has been
@@ -50,7 +26,7 @@
   of `form` and returns the result; otherwise, returns `form`."
   [form]
   (if (and (list? form) (symbol? (first form)))
-      (-> form expand-macro expand-js-interop)
+      (expand-macro form)
       form))
 
 (defn expand
