@@ -71,18 +71,15 @@
 (defn emit-fn [{:keys [name clauses]}]
   (let [name (emit-escaped (:form name))]
     (if (= (count clauses) 1)
-      (let [{:keys [params body]} (val (first clauses))]
-        (str "var " name "=function(){"
-             "var recur=" name ";"
-             (emit-params params) ";"
-             (emit-expr-block body) "}"))
-      (str "var " name "=function(){"
-           "var recur=" name ";"
-           "switch(arguments.length){"
-           (string/join ";" (map emit-fn-clause clauses))
-           ";default:throw new Error("
-           "\"invalid function arity (\" + arguments.length + \")\""
-           ");}}"))))
+        (let [{:keys [params body]} (val (first clauses))]
+          (str "function(){"
+               (emit-params params) ";"
+               (emit-expr-block body) "}"))
+        (str "function(){switch(arguments.length){"
+             (string/join ";" (map emit-fn-clause clauses))
+             ";default:throw new Error("
+             "\"invalid function arity (\" + arguments.length + \")\""
+             ");}}"))))
 
 ;; list forms
 
