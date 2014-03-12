@@ -55,28 +55,30 @@
   (emit-wrapped "if(" (emit test) "){" (emit-return then)
                 "}else{" (emit-return else) "}"))
 
+(defn emit-new [{:keys [ctor args]}]
+  (str "(new " (emit ctor) "(" (comma-sep args) "))"))
+
 (defn emit-throw [{:keys [thrown]}]
   (emit-wrapped "throw " (emit thrown) ";"))
 
 ;; function forms
 
 (defn emit-params [params]
-  (->> (range (count params))
-       (map (fn [param-num]
-              (str (emit-escaped (get params param-num))
-                   "=arguments[" param-num "]")))
-       (string/join ";")))
+  (when-not (empty? params)
+    (str (->> (range (count params))
+              (map (fn [param-num]
+                     (str (emit-escaped (get params param-num))
+                          "=arguments[" param-num "]")))
+              (string/join ";")) ";")))
 
 (defn emit-fn-clause [[num-params {:keys [params] :as clause}]]
   (str "case " num-params ":" (emit-params params)
-       ";return " (emit-do clause)))
+       "return " (emit-do clause)))
 
 (defn emit-fn [{:keys [clauses]}]
   (if (= (count clauses) 1)
       (let [{:keys [params body]} (val (first clauses))]
-        (str "function(){"
-             (emit-params params) ";"
-             (emit-expr-block body) "}"))
+        (str "function(){" (emit-params params) (emit-expr-block body) "}"))
       (str "function(){switch(arguments.length){"
            (string/join ";" (map emit-fn-clause clauses))
            ";default:throw new Error("
@@ -162,6 +164,7 @@
    :fn emit-fn
    :if emit-if
    :let emit-let
+   :new emit-new
    :throw emit-throw})
 
 (defn emit [{:keys [op type] :as ast-node}]

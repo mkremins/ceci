@@ -74,6 +74,12 @@
       (assoc :then (analyze env then))
       (assoc :else (analyze env else))))
 
+(defn analyze-new [env {[_ ctor & args] :children :as ast}]
+  (-> ast
+      (assoc :op :new)
+      (assoc :ctor (analyze env ctor))
+      (assoc :args (map (partial analyze env) args))))
+
 (defn analyze-quote [env {[_ ast] :children}]
   (let [env (assoc env :quoted? true)]
     (analyze env ast)))
@@ -156,6 +162,7 @@
    'fn analyze-fn
    'if analyze-if
    'let analyze-let
+   'new analyze-new
    'quote analyze-quote
    'throw analyze-throw})
 
