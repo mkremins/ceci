@@ -47,7 +47,7 @@
 
 (defn emit-let [{:keys [bindings body]}]
   (letfn [(emit-binding [[k v]]
-            (str "var " (emit-escaped k) "=" (emit v)))]
+            (str (emit-escaped k) "=" (emit v)))]
     (emit-wrapped (string/join ";" (map emit-binding bindings)) ";"
                   (emit-expr-block body))))
 
@@ -60,7 +60,7 @@
 (defn emit-params [params]
   (->> (range (count params))
        (map (fn [param-num]
-              (str "var " (emit-escaped (get params param-num))
+              (str (emit-escaped (get params param-num))
                    "=arguments[" param-num "]")))
        (string/join ";")))
 
