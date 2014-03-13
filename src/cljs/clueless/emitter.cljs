@@ -78,12 +78,12 @@
 (defn emit-fn [{:keys [clauses]}]
   (if (= (count clauses) 1)
       (let [{:keys [params body]} (val (first clauses))]
-        (str "function(){" (emit-params params) (emit-expr-block body) "}"))
-      (str "function(){switch(arguments.length){"
+        (str "(function(){" (emit-params params) (emit-expr-block body) "})"))
+      (str "(function(){switch(arguments.length){"
            (string/join ";" (map emit-fn-clause clauses))
            ";default:throw new Error("
            "\"invalid function arity (\" + arguments.length + \")\""
-           ");}}")))
+           ");}})")))
 
 ;; list forms
 

@@ -127,10 +127,10 @@
 
 ;; defmacro forms
 
-(defn analyze-defmacro [env {[_ name-node & _] :children :as ast}]
-  (let [macro-name (:form name-node)
-        macro-node (analyze-fn env ast)]
-    (expander/install-macro! macro-name (js/eval (emitter/emit macro-node)))
+(defn analyze-defmacro [env {[_ name & _] :children :as ast}]
+  (let [macro-node (analyze-fn env ast)
+        compiled (js/eval (emitter/emit macro-node))]
+    (expander/install-macro! (:form name) compiled)
     macro-node))
 
 ;; let forms

@@ -14,9 +14,9 @@
   expand `form`, returning the result. Otherwise, returns `form`."
   [form]
   (if-let [expander (get @macros (first form))]
-          (let [metadata (meta form)]
-            (merge-meta (apply expander (rest form)) metadata))
-          form))
+    (let [metadata (meta form)]
+      (merge-meta (apply expander (rest form)) metadata))
+    form))
 
 ;; public API
 
