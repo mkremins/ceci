@@ -103,12 +103,24 @@
         (recur (assoc analyzed (count params) clause) env (rest clauses)))
       analyzed)))
 
-(defn analyze-fn [env {[_ & args] :children :as ast}]
-  (let [clauses
-        (condp = (:type (first args))
-          :vector [(cons (first args) (rest args))]
-          :list (map :children args)
-          (raise "invalid function definition" (:form ast)))]
+(defn extract-clauses
+  "Given `ast`, an AST node representing a `fn` special form, extracts and
+  returns a collection of clauses. Each clause is a sequence of AST nodes whose
+  first item represents the params taken by that clause and whose remaining
+  items comprise the clause body."
+  [{[_ & args] :children :as ast}]
+  (condp = (:type (first args))
+    :symbol (let [args (rest args)]
+              (condp = (:type (first args))
+                :vector [(cons (first args) (rest args))]
+                :list (map :children args)
+                (raise "invalid function definition" (:form ast))))
+    :vector [(cons (first args) (rest args))]
+    :list (map :children args)
+    (raise "invalid function definition" (:form ast))))
+
+(defn analyze-fn [env ast]
+  (let [clauses (extract-clauses ast)]
     (-> ast
         (assoc :op :fn)
         (assoc :clauses (analyze-clauses env clauses)))))
