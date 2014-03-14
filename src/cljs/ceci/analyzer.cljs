@@ -1,7 +1,7 @@
-(ns clueless.analyzer
-  (:require [clueless.emitter :as emitter]
-            [clueless.expander :as expander]
-            [clueless.util :refer [raise update]]))
+(ns ceci.analyzer
+  (:require [ceci.emitter :as emitter]
+            [ceci.expander :as expander]
+            [ceci.util :refer [raise update]]))
 
 ;; AST creation
 
@@ -191,7 +191,7 @@
           (= sym (symbol "false")) false-ast-node
           (= sym (symbol "nil")) nil-ast-node
           ((set (:locals env)) sym) ast
-          :else (assoc ast :form (clueless.env/resolve sym)))))
+          :else (assoc ast :form (ceci.env/resolve sym)))))
 
 (defn analyze
   ([ast] (analyze {:locals [] :quoted? false} ast))

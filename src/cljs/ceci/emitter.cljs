@@ -1,4 +1,4 @@
-(ns clueless.emitter
+(ns ceci.emitter
   (:require [clojure.string :as string]))
 
 (declare emit)

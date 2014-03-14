@@ -1,9 +1,9 @@
-(ns clueless.compiler
+(ns ceci.compiler
   (:require [clojure.string :as string]
-            [clueless.analyzer :as analyzer]
-            [clueless.emitter :as emitter]
-            [clueless.expander :as expander]
-            [clueless.reader :as reader])
+            [ceci.analyzer :as analyzer]
+            [ceci.emitter :as emitter]
+            [ceci.expander :as expander]
+            [ceci.reader :as reader])
   (:refer-clojure :exclude [compile slurp spit]))
 
 (enable-console-print!)

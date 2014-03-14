@@ -1,6 +1,6 @@
-(ns clueless.reader
+(ns ceci.reader
   (:require [clojure.string :as string]
-            [clueless.util :refer [merge-meta metadatable?]])
+            [ceci.util :refer [merge-meta metadatable?]])
   (:refer-clojure :exclude [*data-readers* read-string]))
 
 (defn reader-error [msg]

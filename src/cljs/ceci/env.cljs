@@ -1,7 +1,7 @@
-(ns clueless.env
+(ns ceci.env
   (:refer-clojure :exclude [create-ns ns ns-name resolve])
   (:require [clojure.string :as string]
-            [clueless.util :refer [update]]))
+            [ceci.util :refer [update]]))
 
 ;; namespace management
 

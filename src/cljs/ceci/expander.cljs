@@ -1,4 +1,4 @@
-(ns clueless.expander
+(ns ceci.expander
   (:require [clueless.util :refer [merge-meta metadatable? raise]]))
 
 ;; macro management
