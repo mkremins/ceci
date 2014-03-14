@@ -144,8 +144,12 @@
 ;; defmacro forms
 
 (defn analyze-defmacro [env {[_ name & _] :children :as ast}]
-  (let [macro-node (analyze-fn env ast)
-        compiled (js/eval (emitter/emit macro-node))]
+  ;; NOTE: (assoc env :context :return) is a hack to get the macro function to
+  ;; return its result. (subs (emitter/emit macro-node) 7) is a hack to remove
+  ;; the unnecessary initial "return " introduced by the above hack from the
+  ;; emitted JS prior to evaluation. Both need to be fixed properly.
+  (let [macro-node (analyze-fn (assoc env :context :return) ast)
+        compiled (js/eval (subs (emitter/emit macro-node) 7))]
     (expander/install-macro! (:form name) compiled)
     macro-node))
 

@@ -196,7 +196,7 @@
 (defn emit [{:keys [env op type] :as ast}]
   (let [context (:context env)
         return? (and (= context :return)
-                     (#{:aget :aset :const :coll :new} op))]
+                     (#{:aget :aset :const :coll :fn :new} op))]
     (str (when return? "return ")
          (if (#{:const :coll} op)
              (let [emit-type (emitters type)]
