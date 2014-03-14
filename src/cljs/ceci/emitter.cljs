@@ -103,14 +103,14 @@
                 (emit-statements body)
                 "break;}"))
 
-(defn emit-recur [{:keys [params recur-point] :as ast}]
+(defn emit-recur [{:keys [args recur-point] :as ast}]
   (let [recur-bindings (:bindings recur-point)
         bindings
         (loop [bindings [] idx 0]
           (let [[binding _] (get recur-bindings idx)
-                param (get params idx)]
-            (if (and binding param)
-                (recur (conj bindings [binding param]) (inc idx))
+                arg (get args idx)]
+            (if (and binding arg)
+                (recur (conj bindings [binding arg]) (inc idx))
                 bindings)))]
     (str (emit-bindings bindings) "continue;")))
 
@@ -198,9 +198,12 @@
    :recur emit-recur
    :throw emit-throw})
 
-(defn emit [{:keys [op type] :as ast-node}]
+(defn emit [{:keys [env op type] :as ast}]
   (if (#{:const :coll} op)
-      (let [emit-type (emitters type)]
-        (emit-type ast-node))
+      (let [emit-type (emitters type)
+            context (:context env)]
+        (str (when (= context :return) "return ")
+             (emit-type ast)
+             (when-not (= context :expr) ";")))
       (let [emit-op (emitters op)]
-        (emit-op ast-node))))
+        (emit-op ast))))
