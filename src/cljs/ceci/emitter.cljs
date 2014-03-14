@@ -45,12 +45,6 @@
 (defn emit-do [{:keys [body]}]
   (emit-wrapped (emit-expr-block body)))
 
-(defn emit-let [{:keys [bindings body]}]
-  (letfn [(emit-binding [[k v]]
-            (str (emit-escaped k) "=" (emit v)))]
-    (emit-wrapped (string/join ";" (map emit-binding bindings)) ";"
-                  (emit-expr-block body))))
-
 (defn emit-if [{:keys [test then else]}]
   (emit-wrapped "if(" (emit test) "){" (emit-return then)
                 "}else{" (emit-return else) "}"))
@@ -84,6 +78,36 @@
            ";default:throw new Error("
            "\"invalid function arity (\" + arguments.length + \")\""
            ");}})")))
+
+;; let, loop and recur forms
+
+(defn emit-bindings [bindings]
+  (let [bindings
+        (map (fn [[k v]]
+               (str (emit-escaped k) "=" (emit v)))
+             bindings)]
+    (str (string/join ";" bindings)
+         (when (> (count bindings) 0) ";"))))
+
+(defn emit-let [{:keys [bindings body]}]
+  (emit-wrapped (emit-bindings bindings) (emit-expr-block body)))
+
+(defn emit-loop [{:keys [bindings body]}]
+  (emit-wrapped (emit-bindings bindings)
+                "while(true){"
+                (emit-expr-block body)
+                "break;}"))
+
+(defn emit-recur [{:keys [params recur-point] :as ast}]
+  (let [recur-bindings (:bindings recur-point)
+        bindings
+        (loop [bindings [] idx 0]
+          (let [[binding _] (get recur-bindings idx)
+                param (get params idx)]
+            (if (and binding param)
+                (recur (conj bindings [binding param]) (inc idx))
+                bindings)))]
+    (str (emit-bindings bindings) "continue")))
 
 ;; list forms
 
@@ -164,7 +188,9 @@
    :fn emit-fn
    :if emit-if
    :let emit-let
+   :loop emit-loop
    :new emit-new
+   :recur emit-recur
    :throw emit-throw})
 
 (defn emit [{:keys [op type] :as ast-node}]

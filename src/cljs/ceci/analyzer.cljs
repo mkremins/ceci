@@ -158,6 +158,22 @@
         (assoc :bindings bindings)
         (assoc :body (map (partial analyze env) body)))))
 
+;; loop and recur forms
+
+(defn analyze-loop [env {[_ bindings & body] :children :as ast}]
+  (let [[env bindings] (analyze-bindings env (compile-bindings bindings))
+        ast (-> ast (assoc :op :loop) (assoc :bindings bindings))
+        env (assoc env :recur-point ast)]
+    (assoc ast :body (map (partial analyze env) body))))
+
+(defn analyze-recur [env {[_ & params] :children :as ast}]
+  (let [recur-point (:recur-point env)]
+    (if recur-point
+        (-> ast (assoc :op :recur)
+                (assoc :recur-point recur-point)
+                (assoc :params (vec (map (partial analyze env) params))))
+        (raise "can't recur here – no enclosing loop" (:form ast)))))
+
 ;; generic interface
 
 (defn analyze-coll [env ast]
@@ -174,8 +190,10 @@
    'fn analyze-fn
    'if analyze-if
    'let analyze-let
+   'loop analyze-loop
    'new analyze-new
    'quote analyze-quote
+   'recur analyze-recur
    'throw analyze-throw})
 
 (defn analyze-list [env {:keys [form] :as ast}]
