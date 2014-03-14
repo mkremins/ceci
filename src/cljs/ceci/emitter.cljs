@@ -24,6 +24,10 @@
     (str (string/join ";" (map emit body))
          (when (> (count body) 0) ";") (emit-return retval))))
 
+(defn emit-statements [statements]
+  (str (string/join ";" (map emit statements))
+       (when (> (count statements) 0) ";")))
+
 (defn emit-wrapped [& exprs]
   (str "(function(){" (string/join exprs) "})()"))
 
@@ -45,9 +49,10 @@
 (defn emit-do [{:keys [body]}]
   (emit-wrapped (emit-expr-block body)))
 
-(defn emit-if [{:keys [test then else]}]
-  (emit-wrapped "if(" (emit test) "){" (emit-return then)
-                "}else{" (emit-return else) "}"))
+(defn emit-if [{:keys [env test then else]}]
+  (if (= (:context env) :expr)
+      (str "((" (emit test) ")?" (emit then) ":" (emit else) ")")
+      (str "if(" (emit test) "){" (emit then) "}else{" (emit else) "}")))
 
 (defn emit-new [{:keys [ctor args]}]
   (str "(new " (emit ctor) "(" (comma-sep args) "))"))
@@ -82,20 +87,20 @@
 ;; let, loop and recur forms
 
 (defn emit-bindings [bindings]
-  (let [bindings
-        (map (fn [[k v]]
-               (str (emit-escaped k) "=" (emit v)))
-             bindings)]
-    (str (string/join ";" bindings)
-         (when (> (count bindings) 0) ";"))))
+  (when (> (count bindings) 0)
+    (str (->> bindings
+              (map (fn [[k v]] (str (emit-escaped k) "=" (emit v))))
+              (string/join ";")) ";")))
 
-(defn emit-let [{:keys [bindings body]}]
-  (emit-wrapped (emit-bindings bindings) (emit-expr-block body)))
+(defn emit-let [{:keys [env bindings body]}]
+  (if (= (:context env) :expr)
+      (emit-wrapped (emit-bindings bindings) (emit-expr-block body))
+      (str (emit-bindings bindings) (emit-statements body))))
 
 (defn emit-loop [{:keys [bindings body]}]
   (emit-wrapped (emit-bindings bindings)
                 "while(true){"
-                (emit-expr-block body)
+                (emit-statements body)
                 "break;}"))
 
 (defn emit-recur [{:keys [params recur-point] :as ast}]
@@ -107,7 +112,7 @@
             (if (and binding param)
                 (recur (conj bindings [binding param]) (inc idx))
                 bindings)))]
-    (str (emit-bindings bindings) "continue")))
+    (str (emit-bindings bindings) "continue;")))
 
 ;; list forms
 

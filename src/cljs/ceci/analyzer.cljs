@@ -69,6 +69,7 @@
 
 (defn analyze-if [env {[_ test then else] :children :as ast}]
   (-> ast
+      (assoc :env env)
       (assoc :op :if)
       (assoc :test (analyze env test))
       (assoc :then (analyze env then))
@@ -152,7 +153,8 @@
       [env analyzed])))
 
 (defn analyze-let [env {[_ bindings & body] :children :as ast}]
-  (let [[env bindings] (analyze-bindings env (compile-bindings bindings))]
+  (let [ast (assoc ast :env env)
+        [env bindings] (analyze-bindings env (compile-bindings bindings))]
     (-> ast
         (assoc :op :let)
         (assoc :bindings bindings)
@@ -161,7 +163,8 @@
 ;; loop and recur forms
 
 (defn analyze-loop [env {[_ bindings & body] :children :as ast}]
-  (let [[env bindings] (analyze-bindings env (compile-bindings bindings))
+  (let [ast (assoc ast :env env)
+        [env bindings] (analyze-bindings env (compile-bindings bindings))
         ast (-> ast (assoc :op :loop) (assoc :bindings bindings))
         env (assoc env :recur-point ast)]
     (assoc ast :body (map (partial analyze env) body))))
@@ -169,7 +172,8 @@
 (defn analyze-recur [env {[_ & params] :children :as ast}]
   (let [recur-point (:recur-point env)]
     (if recur-point
-        (-> ast (assoc :op :recur)
+        (-> ast (assoc :env env)
+                (assoc :op :recur)
                 (assoc :recur-point recur-point)
                 (assoc :params (vec (map (partial analyze env) params))))
         (raise "can't recur here – no enclosing loop" (:form ast)))))
@@ -212,7 +216,7 @@
           :else (assoc ast :form (ceci.env/resolve sym)))))
 
 (defn analyze
-  ([ast] (analyze {:locals [] :quoted? false} ast))
+  ([ast] (analyze {:context :statement :locals [] :quoted? false} ast))
   ([env {:keys [op type] :as ast}]
     (cond (= type :list) (analyze-list env ast)
           (= op :coll) (analyze-coll env ast)
