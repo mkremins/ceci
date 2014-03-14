@@ -15,17 +15,8 @@
     (string/replace #">" "_GT_")
     (string/replace #"=" "_EQ_")))
 
-(defn emit-return [expr]
-  (str "return " (emit expr) ";"))
-
-(defn emit-expr-block [exprs]
-  (let [body (drop-last exprs)
-        retval (last exprs)]
-    (str (string/join ";" (map emit body))
-         (when (> (count body) 0) ";") (emit-return retval))))
-
 (defn emit-statements [statements]
-  (str (string/join ";" (map emit statements))
+  (str (string/join (map emit statements))
        (when (> (count statements) 0) ";")))
 
 (defn emit-wrapped [& exprs]
@@ -46,8 +37,10 @@
 (defn emit-def [{:keys [name init]}]
   (str (emit name) "=" (emit init)))
 
-(defn emit-do [{:keys [body]}]
-  (emit-wrapped (emit-expr-block body)))
+(defn emit-do [{:keys [env body]}]
+  (if (= (:context env) :expr)
+      (emit-wrapped (emit-statements body))
+      (emit-statements body)))
 
 (defn emit-if [{:keys [env test then else]}]
   (if (= (:context env) :expr)
@@ -70,14 +63,14 @@
                           "=arguments[" param-num "]")))
               (string/join ";")) ";")))
 
-(defn emit-fn-clause [[num-params {:keys [params] :as clause}]]
+(defn emit-fn-clause [[num-params {:keys [params body]}]]
   (str "case " num-params ":" (emit-params params)
-       "return " (emit-do clause)))
+       "return " (emit-statements body)))
 
 (defn emit-fn [{:keys [clauses]}]
   (if (= (count clauses) 1)
       (let [{:keys [params body]} (val (first clauses))]
-        (str "(function(){" (emit-params params) (emit-expr-block body) "})"))
+        (str "(function(){" (emit-params params) (emit-statements body) "})"))
       (str "(function(){switch(arguments.length){"
            (string/join ";" (map emit-fn-clause clauses))
            ";default:throw new Error("
@@ -94,14 +87,17 @@
 
 (defn emit-let [{:keys [env bindings body]}]
   (if (= (:context env) :expr)
-      (emit-wrapped (emit-bindings bindings) (emit-expr-block body))
+      (emit-wrapped (emit-bindings bindings) (emit-statements body))
       (str (emit-bindings bindings) (emit-statements body))))
 
-(defn emit-loop [{:keys [bindings body]}]
-  (emit-wrapped (emit-bindings bindings)
-                "while(true){"
-                (emit-statements body)
-                "break;}"))
+(defn emit-loop [{:keys [env bindings body]}]
+  (if (= (:context env) :expr)
+      (emit-wrapped (emit-bindings bindings)
+                    "while(true){"
+                    (emit-statements body)
+                    "break;}")
+      (str (emit-bindings bindings) "while(true){"
+           (emit-statements body) "break;}")))
 
 (defn emit-recur [{:keys [args recur-point] :as ast}]
   (let [recur-bindings (:bindings recur-point)
@@ -199,11 +195,13 @@
    :throw emit-throw})
 
 (defn emit [{:keys [env op type] :as ast}]
-  (if (#{:const :coll} op)
-      (let [emit-type (emitters type)
-            context (:context env)]
-        (str (when (= context :return) "return ")
-             (emit-type ast)
-             (when-not (= context :expr) ";")))
-      (let [emit-op (emitters op)]
-        (emit-op ast))))
+  (let [context (:context env)
+        return? (and (= context :return)
+                     (#{:aget :aset :const :coll :new} op))]
+    (str (when return? "return ")
+         (if (#{:const :coll} op)
+             (let [emit-type (emitters type)]
+               (emit-type ast))
+             (let [emit-op (emitters op)]
+               (emit-op ast)))
+         (when-not (= context :expr) ";"))))

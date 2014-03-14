@@ -199,7 +199,7 @@
 (defn analyze-coll [env ast]
   (-> ast
       (assoc :env env)
-      (update :children #(map (partial analyze env) %))))
+      (update :children #(map (partial analyze (expr-env env)) %))))
 
 (def specials
   {'aget analyze-aget
