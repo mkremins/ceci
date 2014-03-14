@@ -151,7 +151,7 @@
   (let [macro-node (analyze-fn (assoc env :context :return) ast)
         compiled (js/eval (subs (emitter/emit macro-node) 7))]
     (expander/install-macro! (:form name) compiled)
-    macro-node))
+    (assoc-in macro-node [:env :context] :statement)))
 
 ;; let forms
 
