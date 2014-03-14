@@ -16,8 +16,7 @@
     (string/replace #"=" "_EQ_")))
 
 (defn emit-statements [statements]
-  (str (string/join (map emit statements))
-       (when (> (count statements) 0) ";")))
+  (string/join (map emit statements)))
 
 (defn emit-wrapped [& exprs]
   (str "(function(){" (string/join exprs) "})()"))
@@ -108,7 +107,7 @@
             (if (and binding arg)
                 (recur (conj bindings [binding arg]) (inc idx))
                 bindings)))]
-    (str (emit-bindings bindings) "continue;")))
+    (str (emit-bindings bindings) "continue")))
 
 ;; list forms
 
@@ -204,4 +203,5 @@
                (emit-type ast))
              (let [emit-op (emitters op)]
                (emit-op ast)))
-         (when-not (= context :expr) ";"))))
+         (when-not (or (= context :expr)
+                       (#{:if :let :loop} op)) ";"))))

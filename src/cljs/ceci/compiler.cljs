@@ -17,13 +17,13 @@
   (.writeFileSync fs fpath contents))
 
 (defn write-js [cljs-source]
-  (str (->> cljs-source
-         (reader/read-code)
-         (map expander/expand-all)
-         (map analyzer/form->ast)
-         (map analyzer/analyze)
-         (map emitter/emit)
-         (string/join ";\n")) ";"))
+  (->> cljs-source
+       (reader/read-code)
+       (map expander/expand-all)
+       (map analyzer/form->ast)
+       (map analyzer/analyze)
+       (map emitter/emit)
+       (string/join "\n")))
 
 (defn compile [in-file out-file]
   (spit out-file (write-js (slurp in-file))))
