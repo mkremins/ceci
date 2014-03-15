@@ -220,11 +220,15 @@
    'recur analyze-recur
    'throw analyze-throw})
 
-(defn analyze-list [env {:keys [form] :as ast}]
-  (let [analyze-special (specials (first form))]
-    (if (and analyze-special (not (:quoted? env)))
+(defn analyze-list [env {:keys [form children] :as ast}]
+  (if (or (:quoted? env) (empty? children))
+      (analyze-coll env ast)
+      (if-let [analyze-special (specials (first form))]
         (analyze-special env ast)
-        (analyze-coll env ast))))
+        (assoc ast
+          :env env :op :invoke
+          :invoked (analyze (expr-env env) (first children))
+          :args (map (partial analyze (expr-env env)) (rest children))))))
 
 (defn analyze-symbol [env {sym :form :as ast}]
   (let [ast (assoc ast :env env)]

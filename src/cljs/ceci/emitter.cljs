@@ -57,6 +57,9 @@
       (str "if(" (emit test) "){" (emit then)
            "}else{" (emit else) "}")))
 
+(defmethod emit-special :invoke [{:keys [invoked args]}]
+  (str (emit invoked) ".call(null," (comma-sep args) ")"))
+
 (defmethod emit-special :new [{:keys [ctor args]}]
   (str "(new " (emit ctor) "(" (comma-sep args) "))"))
 
@@ -125,15 +128,10 @@
 
 (defmulti emit-collection :type)
 
-(defn emit-invoke [invoked args]
-  (str (emit invoked) ".call(null," (comma-sep args) ")"))
-
 (defmethod emit-collection :list [{:keys [children] {:keys [quoted?]} :env}]
-  (if-let [{:keys [type value] :as first-child} (first children)]
-    (if quoted?
-        (str "cljs.core.list(" (comma-sep children) ")")
-        (emit-invoke first-child (rest children)))
-    "cljs.core.List.EMPTY"))
+  (if (empty? children)
+      "cljs.core.List.EMPTY"
+      (str "cljs.core.list(" (comma-sep children) ")")))
 
 (defmethod emit-collection :vector [{:keys [children]}]
   (if (empty? children)
@@ -193,7 +191,7 @@
   [{:keys [env op] :as ast}]
   (let [context (:context env)]
     (str (when (and (= context :return)
-                    (#{:aget :aset :const :coll :fn :new} op)) "return ")
+                    (#{:aget :aset :const :coll :fn :invoke :new} op)) "return ")
          (condp = op
            :const (emit-constant ast)
            :coll (emit-collection ast)
