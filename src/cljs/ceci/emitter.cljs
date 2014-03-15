@@ -122,7 +122,7 @@
             (if (and binding arg)
                 (recur (conj bindings [binding arg]) (inc idx))
                 bindings)))]
-    (str (emit-bindings bindings) "continue")))
+    (str (emit-bindings bindings) "continue;\n")))
 
 ;; collection forms
 
@@ -186,16 +186,15 @@
 
 ;; generic interface
 
+(def block? #{:if :let :loop :recur})
+
 (defn emit
   "Given an AST node `ast`, returns a string of equivalent JavaScript code."
-  [{:keys [env op] :as ast}]
-  (let [context (:context env)]
-    (str (when (and (= context :return)
-                    (#{:aget :aset :const :coll :fn :invoke :new} op)) "return ")
-         (condp = op
-           :const (emit-constant ast)
-           :coll (emit-collection ast)
-           (emit-special ast))
-         (when-not (or (= context :expr)
-                       (#{:if :let :loop} op)) ";\n"))))
+  [{:keys [op] {:keys [context]} :env :as ast}]
+  (str (when (and (= context :return) (not (block? op))) "return ")
+       (condp = op
+         :const (emit-constant ast)
+         :coll (emit-collection ast)
+         (emit-special ast))
+       (when-not (or (= context :expr) (block? op)) ";\n")))
  
