@@ -128,7 +128,7 @@
 
 (defmulti emit-collection :type)
 
-(defmethod emit-collection :list [{:keys [children] {:keys [quoted?]} :env}]
+(defmethod emit-collection :list [{:keys [children]}]
   (if (empty? children)
       "cljs.core.List.EMPTY"
       (str "cljs.core.list(" (comma-sep children) ")")))
