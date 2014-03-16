@@ -18,6 +18,41 @@
       (merge-meta (apply expander (rest form)) metadata))
     form))
 
+;; syntax sugar
+
+(defn desugar-new-syntax
+  "Assumes `form` is a list form. If `(first form)` ends with a period,
+  desugars `form` to the canonical constructor-invoke syntax `(new ctor args)`
+  and returns the result. Otherwise, returns `form`."
+  [form]
+  (let [ctor-name (str (first form))]
+    (if (= (last ctor-name) ".")
+        (apply list 'new
+               (symbol (subs ctor-name 0 (dec (count ctor-name))))
+               (rest form))
+        form)))
+
+(defn desugar-field-access
+  "Assumes `form` is a list form. If `(first form)` starts with a period
+  followed by a dash, desugars `form` to the canonical field-access syntax
+  `(aget obj fname)` and returns the result. Otherwise, returns `form`."
+  [form]
+  (let [field (str (first form))]
+    (if (and (= (first field) ".") (= (second field) "-"))
+        (list 'aget (second form) (subs field 2))
+        form)))
+
+(defn desugar-method-call
+  "Assumes `form` is a list form. If `(first form)` starts with a period,
+  desugars `form` to the canonical method-call syntax `((aget obj mname) args)`
+  and returns the result. Otherwise, returns `form`."
+  [form]
+  (let [method (str (first form))]
+    (if (= (first method) ".")
+        (cons (list 'aget (second form) (subs method 1))
+              (drop 2 form))
+        form)))
+
 ;; public API
 
 (defn expand-once
@@ -26,7 +61,11 @@
   of `form` and returns the result; otherwise, returns `form`."
   [form]
   (if (and (list? form) (symbol? (first form)))
-      (expand-macro form)
+      (-> form
+          expand-macro
+          desugar-new-syntax
+          desugar-field-access
+          desugar-method-call)
       form))
 
 (defn expand
