@@ -82,8 +82,7 @@
                 (string/join ";\n")) ";\n"))))
 
 (defn emit-fn-clause [[num-params {:keys [params body]}]]
-  (str "case " num-params ":" (emit-params params)
-       "return " (emit-statements body)))
+  (str "case " num-params ":" (emit-params params) (emit-statements body)))
 
 (defmethod emit-special :fn [{:keys [clauses]}]
   (if (= (count clauses) 1)
@@ -91,8 +90,8 @@
         (str "(function(){" (emit-params params)
              (emit-statements body) "})"))
       (str "(function(){switch(arguments.length){"
-           (string/join ";\n" (map emit-fn-clause clauses))
-           ";\ndefault:throw new Error("
+           (string/join (map emit-fn-clause clauses))
+           "default:throw new Error("
            "\"invalid function arity (\" + arguments.length + \")\""
            ");}})")))
 
