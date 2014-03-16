@@ -50,14 +50,14 @@
 ;; aget, aset (interop) forms
 
 (defn analyze-aget [env {[_ target & fields] :children :as ast}]
-  (assoc ast :env env :op :aget
+  (assoc ast :op :aget
     :target (analyze (expr-env env) target)
     :fields (map (partial analyze (expr-env env)) fields)))
 
 (defn analyze-aset [env {[_ target & fields+value] :children :as ast}]
   (let [fields (drop-last fields+value)
         value (last fields+value)]
-    (assoc ast :env env :op :aset
+    (assoc ast :op :aset
       :target (analyze (expr-env env) target)
       :fields (map (partial analyze (expr-env env)) fields)
       :value (analyze (expr-env env) value))))
@@ -65,22 +65,22 @@
 ;; def, do, if forms
 
 (defn analyze-def [env {[_ name & [init?]] :children :as ast}]
-  (assoc ast :env env :op :def
+  (assoc ast :op :def
     :name (analyze (expr-env env) name)
     :init (analyze (expr-env env) (or init? nil-ast-node))))
 
 (defn analyze-do [env {[_ & body] :children :as ast}]
-  (assoc ast :env env :op :do
+  (assoc ast :op :do
     :body (analyze-block env body)))
 
 (defn analyze-if [env {[_ test then else] :children :as ast}]
-  (assoc ast :env env :op :if
+  (assoc ast :op :if
     :test (analyze (expr-env env) test)
     :then (analyze env then)
     :else (analyze env else)))
 
 (defn analyze-new [env {[_ ctor & args] :children :as ast}]
-  (assoc ast :env env :op :new
+  (assoc ast :op :new
     :ctor (analyze (expr-env env) ctor)
     :args (map (partial analyze (expr-env env)) args)))
 
@@ -88,7 +88,7 @@
   (analyze (assoc env :quoted? true) ast))
 
 (defn analyze-throw [env {[_ thrown] :children :as ast}]
-  (assoc ast :env env :op :throw
+  (assoc ast :op :throw
     :thrown (analyze (expr-env env) thrown)))
 
 ;; fn forms
@@ -123,18 +123,17 @@
 
 (defn analyze-fn [env ast]
   (let [clauses (extract-clauses ast)]
-    (assoc ast :env env :op :fn
+    (assoc ast :op :fn
       :clauses (analyze-clauses env clauses))))
 
 ;; defmacro forms
 
 (defn analyze-defmacro [env {[_ name & _] :children :as ast}]
-  ;; NOTE: (assoc env :context :return) is a hack to get the macro function to
-  ;; return its result. (subs (emitter/emit macro-node) 7) is a hack to remove
-  ;; the unnecessary initial "return " introduced by the above hack from the
-  ;; emitted JS prior to evaluation. Both need to be fixed properly.
+  ;; HACK: (assoc env :context :return) is used to get the macro function to
+  ;; return its result. This should be fixed by dropping first-class `defmacro`
+  ;; and instead offering compiler support for ^:macro metadata on fns.
   (let [macro-node (analyze-fn (assoc env :context :return) ast)
-        compiled (js/eval (subs (emitter/emit macro-node) 7))]
+        compiled (js/eval (emitter/emit macro-node))]
     (expander/install-macro! (:form name) compiled)
     (assoc-in macro-node [:env :context] :statement)))
 
@@ -158,7 +157,7 @@
 
 (defn analyze-let [env {[_ bindings & body] :children :as ast}]
   (let [[body-env bindings] (analyze-bindings env (compile-bindings bindings))]
-    (assoc ast :env env :op :let
+    (assoc ast :op :let
       :bindings bindings
       :body (analyze-block body-env body))))
 
@@ -166,14 +165,14 @@
 
 (defn analyze-loop [env {[_ bindings & body] :children :as ast}]
   (let [[body-env bindings] (analyze-bindings env (compile-bindings bindings))
-        ast (assoc ast :env env :op :loop :bindings bindings)
+        ast (assoc ast :op :loop :bindings bindings)
         body-env (assoc body-env :recur-point ast)]
     (assoc ast :body (analyze-block body-env body))))
 
 (defn analyze-recur [env {[_ & args] :children :as ast}]
   (let [recur-point (:recur-point env)]
     (if recur-point
-        (assoc ast :env env :op :recur
+        (assoc ast :op :recur
           :recur-point recur-point
           :args (vec (map (partial analyze (expr-env env)) args)))
         (raise "can't recur here – no enclosing loop" (:form ast)))))
@@ -181,9 +180,7 @@
 ;; generic interface
 
 (defn analyze-coll [env ast]
-  (-> ast
-      (assoc :env env)
-      (update :children #(map (partial analyze (expr-env env)) %))))
+  (update ast :children #(map (partial analyze (expr-env env)) %)))
 
 (def specials
   {'aget analyze-aget
@@ -205,23 +202,23 @@
       (analyze-coll env ast)
       (if-let [analyze-special (specials (first form))]
         (analyze-special env ast)
-        (assoc ast :env env :op :invoke
+        (assoc ast :op :invoke
           :invoked (analyze (expr-env env) (first children))
           :args (map (partial analyze (expr-env env)) (rest children))))))
 
 (defn analyze-symbol [env {sym :form :as ast}]
-  (let [ast (assoc ast :env env)]
-    (cond (:quoted? env) ast
-          (= sym (symbol "true")) true-ast-node
-          (= sym (symbol "false")) false-ast-node
-          (= sym (symbol "nil")) nil-ast-node
-          ((set (:locals env)) sym) ast
-          :else (assoc ast :form (ceci.env/resolve sym)))))
+  (cond (:quoted? env) ast
+        (= sym (symbol "true")) true-ast-node
+        (= sym (symbol "false")) false-ast-node
+        (= sym (symbol "nil")) nil-ast-node
+        ((set (:locals env)) sym) ast
+        :else (assoc ast :form (ceci.env/resolve sym))))
 
 (defn analyze
   ([ast] (analyze {:context :statement :locals [] :quoted? false} ast))
   ([env {:keys [op type] :as ast}]
-    (cond (= type :list) (analyze-list env ast)
-          (= op :coll) (analyze-coll env ast)
-          (= type :symbol) (analyze-symbol env ast)
-          :else (assoc ast :env env))))
+    (let [ast (assoc ast :env env)]
+      (cond (= type :list) (analyze-list env ast)
+            (= op :coll) (analyze-coll env ast)
+            (= type :symbol) (analyze-symbol env ast)
+            :else ast))))
