@@ -70,11 +70,15 @@
 
 (defn emit-params [params]
   (when-not (empty? params)
-    (str (->> (range (count params))
-              (map (fn [param-num]
-                     (str (emit-escaped (get params param-num))
-                          "=arguments[" param-num "]")))
-              (string/join ";\n")) ";\n")))
+    (letfn [(emit-param [idx]
+              (let [param (get params idx)]
+                (str (emit-escaped param) "="
+                     (if (:rest-param? (meta param))
+                         (str "Array.prototype.slice.call(arguments," idx ")")
+                         (str "arguments[" idx "]")))))]
+      (str (->> (range (count params))
+                (map emit-param)
+                (string/join ";\n")) ";\n"))))
 
 (defn emit-fn-clause [[num-params {:keys [params body]}]]
   (str "case " num-params ":" (emit-params params)

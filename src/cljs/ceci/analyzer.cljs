@@ -94,7 +94,11 @@
 ;; fn forms
 
 (defn analyze-params [env {:keys [children]}]
-  (let [params (vec (map :form children))]
+  (let [raw-params (vec (map :form children))
+        params (if (= (second (reverse raw-params)) '&)
+                   (conj (vec (drop-last 2 raw-params))
+                         (with-meta (last raw-params) {:rest-param? true}))
+                   raw-params)]
     [(update env :locals concat params) params]))
 
 (defn analyze-clauses [env clauses]
