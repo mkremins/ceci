@@ -1,5 +1,6 @@
 (ns ceci.emitter
-  (:require [clojure.string :as string]))
+  (:require [ceci.util :refer [in?]]
+            [clojure.string :as string]))
 
 (declare emit)
 
@@ -97,11 +98,15 @@
 
 ;; let, loop and recur forms
 
-(defn emit-bindings [bindings]
-  (when (> (count bindings) 0)
-    (str (->> bindings
-              (map (fn [[k v]] (str (emit-escaped k) "=" (emit v))))
-              (string/join ";\n")) ";\n")))
+(defn emit-bindings
+  ([bindings] (emit-bindings bindings []))
+  ([bindings temps]
+    (when (> (count bindings) 0)
+      (str (->> bindings
+                (map (fn [[k v]]
+                       (str (emit-escaped k) "="
+                            (if (in? temps v) (emit-escaped v) (emit v)))))
+                (string/join ";\n")) ";\n"))))
 
 (defmethod emit-special :let [{:keys [env bindings body]}]
   (if (= (:context env) :expr)
@@ -118,15 +123,12 @@
            (emit-statements body) "break;\n}")))
 
 (defmethod emit-special :recur [{:keys [args recur-point]}]
-  (let [recur-bindings (:bindings recur-point)
-        bindings
-        (loop [bindings [] idx 0]
-          (let [[binding _] (get recur-bindings idx)
-                arg (get args idx)]
-            (if (and binding arg)
-                (recur (conj bindings [binding arg]) (inc idx))
-                bindings)))]
-    (str (emit-bindings bindings) "continue;\n")))
+  (let [rebinds (vec (map first (:bindings recur-point)))
+        num-args (count args)
+        temps (vec (take num-args (repeatedly gensym)))
+        bindings (concat (map (juxt temps args) (range num-args))
+                         (map (juxt rebinds temps) (range num-args)))]
+    (str (emit-bindings bindings temps) "continue;\n")))
 
 ;; collection forms
 

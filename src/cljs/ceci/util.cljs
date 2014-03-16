@@ -1,5 +1,8 @@
 (ns ceci.util)
 
+(defn in? [coll item]
+  (some (partial = item) coll))
+
 (defn update [m k f & args]
   (apply (partial update-in m [k] f) args))
 
