@@ -59,7 +59,7 @@
            "}else{" (emit else) "}")))
 
 (defmethod emit-special :invoke [{:keys [invoked args]}]
-  (str (emit invoked) ".call(null," (comma-sep args) ")"))
+  (str (emit invoked) ".call(null" (when (seq args) ",") (comma-sep args) ")"))
 
 (defmethod emit-special :new [{:keys [ctor args]}]
   (str "(new " (emit ctor) "(" (comma-sep args) "))"))
