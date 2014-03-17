@@ -147,8 +147,11 @@
 (defmethod emit-collection :map [{:keys [children]}]
   (if (empty? children)
       "cljs.core.PersistentArrayMap.EMPTY"
-      (str "new cljs.core.PersistentArrayMap.fromArray(["
-           (comma-sep children) "],true,false)")))
+      (let [pairs (map :children children)
+            ks (map first pairs)
+            vs (map second pairs)]
+        (str "new cljs.core.PersistentArrayMap.fromArray(["
+             (comma-sep (interleave ks vs)) "],true,false)"))))
 
 (defmethod emit-collection :set [{:keys [children]}]
   (if (empty? children)
@@ -166,7 +169,7 @@
 (defmethod emit-constant :keyword [{:keys [form]}]
   (let [name (name form)]
     (str "new cljs.core.Keyword(null,"
-         (wrap-quotes name) "," (wrap-quotes name) "," (hash form))))
+         (wrap-quotes name) "," (wrap-quotes name) "," (hash form) ")")))
 
 (defmethod emit-constant :nil [_]
   "null")
