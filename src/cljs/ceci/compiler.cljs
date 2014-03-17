@@ -3,7 +3,8 @@
             [ceci.analyzer :as analyzer]
             [ceci.emitter :as emitter]
             [ceci.expander :as expander]
-            [ceci.reader :as reader])
+            [ceci.reader :as reader]
+            [ceci.repl :as repl])
   (:refer-clojure :exclude [compile slurp spit]))
 
 (enable-console-print!)
@@ -28,4 +29,9 @@
 (defn compile [in-file out-file]
   (spit out-file (write-js (slurp in-file))))
 
-(set! *main-cli-fn* compile)
+(defn -main
+  ([] (repl/launch!))
+  ([in-file out-file]
+    (compile in-file out-file)))
+
+(set! *main-cli-fn* -main)
