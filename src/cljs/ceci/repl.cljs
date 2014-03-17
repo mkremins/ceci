@@ -7,7 +7,10 @@
 
 (def rl (js/require "readline"))
 
-(defn write-js [cljs-source]
+(defn write-js
+  "Compiles `cljs-source` (a string of ClojureScript code) to JavaScript and
+  returns the resulting JS."
+  [cljs-source]
   (->> cljs-source
        (reader/read-code)
        (map expander/expand-all)
@@ -16,20 +19,40 @@
        (map emitter/emit)
        (string/join "\n")))
 
-(defn eval-line [interface line]
+(defn eval-print!
+  "Compiles a `line` of ClojureScript code to JavaScript, then immediately
+  evaluates the resulting JavaScript in the context of REPL interface
+  `interface` and prints the result."
+  [interface line]
   (let [res (try (js/eval (write-js line))
               (catch js/Error e e))]
     (.log js/console res)
     (.prompt interface)))
 
-(defn init! []
-  (js/eval "user = {};"))
+(defn log!
+  "Logs every message in `messages` to stdout in order, separating them with
+  newlines."
+  [& messages]
+  (let [messages-str (string/join "\n" messages)]
+    (.log js/console messages-str)))
 
-(defn launch! []
+(defn init!
+  "Handles initial setup of the REPL, initializing an empty `user` namespace in
+  which the REPL user may work and printing the REPL startup banner to stdout."
+  []
+  (js/eval "user = {};")
+  (log! "Ceci ClojureScript REPL v0.1.0"
+        "Clojure 1.5.1 / ClojureScript 0.0-2173"
+        "(CTRL+C to quit)\n"))
+
+(defn launch!
+  "Launches the REPL, first initializing a new REPL instance (using `init!`)
+  and then handing control of stdin and stdout to the created instance."
+  []
   (init!)
   (let [opts #js {:input (.-stdin js/process) :output (.-stdout js/process)}
         interface (.createInterface rl opts)]
     (doto interface
       (.setPrompt "user=> ")
       (.prompt)
-      (.on "line" (partial eval-line interface)))))
+      (.on "line" (partial eval-print! interface)))))
