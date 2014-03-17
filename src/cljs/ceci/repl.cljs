@@ -26,7 +26,7 @@
   [interface line]
   (let [res (try (js/eval (write-js line))
               (catch js/Error e e))]
-    (.log js/console res)
+    (prn res)
     (.prompt interface)))
 
 (defn log!
@@ -34,7 +34,7 @@
   newlines."
   [& messages]
   (let [messages-str (string/join "\n" messages)]
-    (.log js/console messages-str)))
+    (println messages-str)))
 
 (defn init!
   "Handles initial setup of the REPL, initializing an empty `user` namespace in
