@@ -22,10 +22,14 @@
     (.log js/console res)
     (.prompt interface)))
 
+(defn init! []
+  (js/eval "user = {};"))
+
 (defn launch! []
+  (init!)
   (let [opts #js {:input (.-stdin js/process) :output (.-stdout js/process)}
         interface (.createInterface rl opts)]
     (doto interface
-      (.setPrompt "=> ")
+      (.setPrompt "user=> ")
       (.prompt)
       (.on "line" (partial eval-line interface)))))
