@@ -192,10 +192,10 @@
    'def analyze-def
    'defmacro analyze-defmacro
    'do analyze-do
-   'fn analyze-fn
+   'fn* analyze-fn
    'if analyze-if
-   'let analyze-let
-   'loop analyze-loop
+   'let* analyze-let
+   'loop* analyze-loop
    'new analyze-new
    'quote analyze-quote
    'recur analyze-recur
