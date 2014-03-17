@@ -17,7 +17,8 @@
        (string/join "\n")))
 
 (defn eval-line [interface line]
-  (let [res (js/eval (write-js line))]
+  (let [res (try (js/eval (write-js line))
+              (catch js/Error e e))]
     (.log js/console res)
     (.prompt interface)))
 
