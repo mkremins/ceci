@@ -1,6 +1,7 @@
 (ns ceci.generator
   (:refer-clojure :exclude [array])
-  (:require [clojure.string :as string]))
+  (:require [ceci.util :refer [in?]]
+            [clojure.string :as string]))
 
 ;; helpers
 
@@ -29,7 +30,11 @@
 (defn identifier [name]
   {:type "Identifier" :name name})
 
-(defn statement [{:keys [type] :as expr-or-statement}]
+(defn statement
+  "If the Escodegen-compatible JavaScript AST node `expr-or-statement` is a
+  statement node, returns it verbatim. Otherwise, coerces it to a statement
+  node by wrapping it in an ExpressionStatement node and returns the result."
+  [{:keys [type] :as expr-or-statement}]
   (if (re-matches #"Statement" type)
       expr-or-statement
       {:type "ExpressionStatement"
@@ -37,6 +42,16 @@
 
 (defn assign [left right]
   {:type "AssignmentExpression" :operator "=" :left left :right right})
+
+(defn generate-bindings
+  ([bindings] (generate-bindings bindings []))
+  ([bindings locals]
+    (map (fn [[k v]]
+           (assign (identifier (escape k))
+                   (if (in? locals v)
+                       (identifier (escape v))
+                       (clj-ast->js-ast v))))
+         bindings)))
 
 ;; specials
 
@@ -93,6 +108,12 @@
             :property (identifier "call")
             :computed false}
    :arguments (concat [(literal nil)] (map clj-ast->js-ast args))})
+
+(defmethod generate-special :let [{:keys [bindings body]}]
+  {:type "BlockStatement"
+   :body (map statement
+              (concat (when (seq bindings) (generate-bindings bindings))
+                      (map clj-ast->js-ast body)))})
 
 (defmethod generate-special :new [{:keys [ctor args]}]
   {:type "NewExpression"
