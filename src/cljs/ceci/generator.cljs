@@ -39,6 +39,12 @@
 
 (defmulti generate-special :op)
 
+(defmethod generate-special :def [{:keys [name init]}]
+  {:type "AssignmentExpression"
+   :operator "="
+   :left (clj-ast->js-ast name)
+   :right (clj-ast->js-ast init)})
+
 (defmethod generate-special :do [{:keys [env body]}]
   (let [base {:type "BlockStatement"
               :body (map clj-ast->js-ast body)}]
