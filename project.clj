@@ -1,11 +1,21 @@
 (defproject ceci "0.1.0-SNAPSHOT"
-  :dependencies [[org.clojure/clojure "1.5.1"]
-                 [org.clojure/clojurescript "0.0-2173"]]
-  :plugins [[lein-cljsbuild "1.0.2"]]
+  :description "Self-hosting ClojureScript compiler"
+  :url "http://github.com/mkremins/ceci"
 
-  :cljsbuild {
-    :builds [{:source-paths ["src/cljs"]
-              :compiler {:output-to "target/js/ceci.js"
-                         :output-dir "target/js/out"
-                         :optimizations :simple
-                         :target :nodejs}}]})
+  :dependencies
+  [[org.clojure/clojure "1.5.1"]
+   [org.clojure/clojurescript "0.0-2173"]]
+
+  :node-dependencies
+  [[escodegen "1.3.0"]]
+
+  :plugins
+  [[lein-cljsbuild "1.0.2"]
+   [lein-npm "0.3.0"]]
+
+  :cljsbuild
+  {:builds [{:source-paths ["src/cljs"]
+             :compiler {:output-to "target/js/ceci.js"
+                        :output-dir "target/js/out"
+                        :optimizations :simple
+                        :target :nodejs}}]})
