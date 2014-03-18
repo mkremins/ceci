@@ -9,3 +9,9 @@ Wherever possible, Ceci aims to output JS that's fully compatible with that of t
 * Ceci expects macros to be written in ClojureScript, not JVM Clojure. You can include macros in your ordinary source files; Ceci doesn't mind.
 * Ceci gives you access to `eval` at runtime.
 * Ceci doesn't run emitted JavaScript through the Google Closure Compiler for dead code elimination, minification and the like. As a result, Ceci-emitted JS is usually "heavier" than the equivalent output of cljsc.
+
+## License
+
+Copyright © 2014 Max Kreminski.
+
+Distributed under the [Eclipse Public License](http://www.eclipse.org/legal/epl-v10.html), just like Clojure(Script).
