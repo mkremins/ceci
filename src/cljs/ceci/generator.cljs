@@ -39,6 +39,20 @@
 
 (defmulti generate-special :op)
 
+(defmethod generate-special :aget [{:keys [target fields]}]
+  (reduce (fn [js-ast field]
+            {:type "MemberExpression"
+             :object js-ast
+             :property (clj-ast->js-ast field)
+             :computed true})
+          (clj-ast->js-ast target) fields))
+
+(defmethod generate-special :aset [{:keys [value] :as ast}]
+  {:type "AssignmentExpression"
+   :operator "="
+   :left (generate-special (assoc ast :op :aget))
+   :right (clj-ast->js-ast value)})
+
 (defmethod generate-special :def [{:keys [name init]}]
   {:type "AssignmentExpression"
    :operator "="
