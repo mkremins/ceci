@@ -1,6 +1,5 @@
 (ns ceci.analyzer
   (:require [ceci.emitter :as emitter]
-            [ceci.expander :as expander]
             [ceci.util :refer [raise update]]))
 
 ;; AST creation
@@ -47,7 +46,7 @@
     (conj (vec (map (partial analyze body-env) (butlast exprs)))
           (analyze return-env (last exprs)))))
 
-;; aget, aset (interop) forms
+;; simple special forms
 
 (defn analyze-aget [env {[_ target & fields] :children :as ast}]
   (assoc ast :op :aget
@@ -61,8 +60,6 @@
       :target (analyze (expr-env env) target)
       :fields (map (partial analyze (expr-env env)) fields)
       :value (analyze (expr-env env) value))))
-
-;; def, do, if forms
 
 (defn analyze-def [env {[_ name & [init?]] :children :as ast}]
   (assoc ast :op :def
@@ -130,17 +127,6 @@
     (assoc ast :op :fn
       :clauses (analyze-clauses env clauses))))
 
-;; defmacro forms
-
-(defn analyze-defmacro [env {[_ name & _] :children :as ast}]
-  ;; HACK: (assoc env :context :return) is used to get the macro function to
-  ;; return its result. This should be fixed by dropping first-class `defmacro`
-  ;; and instead offering compiler support for ^:macro metadata on fns.
-  (let [macro-node (analyze-fn (assoc env :context :return) ast)
-        compiled (js/eval (emitter/emit macro-node))]
-    (expander/install-macro! (:form name) compiled)
-    (assoc-in macro-node [:env :context] :statement)))
-
 ;; let forms
 
 (defn compile-bindings [bindings]
@@ -190,7 +176,6 @@
   {'aget analyze-aget
    'aset analyze-aset
    'def analyze-def
-   'defmacro analyze-defmacro
    'do analyze-do
    'fn* analyze-fn
    'if analyze-if

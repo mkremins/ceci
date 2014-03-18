@@ -1,5 +1,8 @@
 (ns ceci.expander
-  (:require [ceci.util :refer [merge-meta metadatable? raise]]))
+  (:refer-clojure :exclude [defmacro])
+  (:require [ceci.analyzer :as ana]
+            [ceci.emitter :as emitter]
+            [ceci.util :refer [merge-meta metadatable? raise]]))
 
 ;; macro management
 
@@ -133,3 +136,17 @@
         :else (raise "unknown collection type" form)))
 
 (install-macro! 'syntax-quote syntax-quote)
+
+;; defmacro
+
+(defn defmacro [name & args]
+  (let [fn-form (expand-all (cons 'fn* args))
+        compiled (->> fn-form
+                      ana/form->ast
+                      (ana/analyze {:context :expr :locals [] :quoted? false})
+                      emitter/emit)
+        macro (js/eval compiled)]
+    (install-macro! name macro)
+    (list 'def name fn-form)))
+
+(install-macro! 'defmacro defmacro)
