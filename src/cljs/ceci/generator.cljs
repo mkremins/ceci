@@ -35,7 +35,7 @@
   statement node, returns it verbatim. Otherwise, coerces it to a statement
   node by wrapping it in an ExpressionStatement node and returns the result."
   [{:keys [type] :as expr-or-statement}]
-  (if (re-matches #"Statement" type)
+  (if (re-find #"Statement" type)
       expr-or-statement
       {:type "ExpressionStatement"
        :expression expr-or-statement}))
@@ -84,13 +84,9 @@
              :body {:type "BlockStatement"
                     :body (map (comp statement assign-field) fields)}})))
 
-(defmethod generate-special :do [{:keys [env body]}]
-  (let [base {:type "BlockStatement"
-              :body (map generate body)}]
-    (if (= (:context env) :expr)
-        {:type "CallExpression"
-         :callee {:type "FunctionExpression" :body base}}
-        base)))
+(defmethod generate-special :do [{:keys [body]}]
+  {:type "BlockStatement"
+   :body (map (comp statement generate) body)})
 
 (defmethod generate-special :if [{:keys [env test then else]}]
   (let [base {:test (generate test)
@@ -115,10 +111,37 @@
               (concat (when (seq bindings) (generate-bindings bindings))
                       (map generate body)))})
 
+(defmethod generate-special :loop [{:keys [bindings body env]}]
+  (let [base
+        {:type "WhileStatement" :test (literal true)
+         :body {:type "BlockStatement"
+                :body (map statement
+                           (concat (when (seq bindings)
+                                     (generate-bindings bindings))
+                                   (map generate body)
+                                   [{:type "BreakStatement"}]))}}]
+    (if (not= (:context env) :statement)
+        {:type "CallExpression"
+         :callee {:type "FunctionExpression"
+                  :body {:type "BlockStatement" :body [base]}
+                  :params []}
+         :arguments []}
+        base)))
+
 (defmethod generate-special :new [{:keys [ctor args]}]
   {:type "NewExpression"
    :callee (generate ctor)
    :arguments (map generate args)})
+
+(defmethod generate-special :recur [{:keys [args recur-point]}]
+  (let [rebinds (vec (map first (:bindings recur-point)))
+        num-args (count args)
+        temps (vec (take num-args (repeatedly gensym)))
+        bindings (concat (map (juxt temps args) (range num-args))
+                         (map (juxt rebinds temps) (range num-args)))]
+    {:type "BlockStatement"
+     :body (map statement (concat (generate-bindings bindings temps)
+                          [{:type "ContinueStatement"}]))}))
 
 (defmethod generate-special :throw [{:keys [env thrown]}]
   {:type "ThrowStatement"
@@ -193,7 +216,7 @@
 
 ;; generic
 
-(def block? #{:if :let :loop :recur})
+(def block? #{:do :if :let :loop :recur})
 
 (defn generate
   "Given an AST node `ast`, returns an equivalent JavaScript AST compatible
