@@ -43,17 +43,6 @@
 (defn assign [left right]
   {:type "AssignmentExpression" :operator "=" :left left :right right})
 
-(defn generate-bindings
-  ([bindings] (generate-bindings bindings []))
-  ([bindings locals]
-    (->> bindings
-         (map (fn [[k v]]
-           (assign (identifier (escape k))
-                   (if (in? locals v)
-                       (identifier (escape v))
-                       (generate v)))))
-         (map statement))))
-
 (defn splice-statements
   "Wraps `statements`, a seq of statement AST nodes, in a single BlockStatement
   node. If any member of `statements` is itself a BlockStatement node, its body
@@ -118,6 +107,67 @@
             :computed false}
    :arguments (concat [(literal nil)] (map generate args))})
 
+(defmethod generate-special :new [{:keys [ctor args]}]
+  {:type "NewExpression"
+   :callee (generate ctor)
+   :arguments (map generate args)})
+
+(defmethod generate-special :throw [{:keys [env thrown]}]
+  {:type "ThrowStatement"
+   :argument (generate thrown)})
+
+;; fn
+
+(defn generate-params [params]
+  (when (seq params)
+    (letfn [(generate-param [idx]
+              (let [param (get params idx)
+                    idx (literal idx)
+                    args-obj (identifier "arguments")]
+                (assign (identifier param)
+                        (if (:rest-param? (meta param))
+                            {:type "CallExpression"
+                             :callee (identifier "Array.prototype.slice.call")
+                             :arguments [args-obj idx]}
+                            {:type "MemberExpression"
+                             :object args-obj
+                             :property idx :computed true}))))]
+      (map generate-param (range (count params))))))
+
+(defn generate-fn-clause [[num-params {:keys [params body]}]]
+  {:type "SwitchCase"
+   :test (literal num-params)
+   :consequent (map statement (concat (generate-params params)
+                                      (map generate body)))})
+
+(defmethod generate-special :fn [{:keys [clauses]}]
+  (if (= (count clauses) 1)
+      (let [{:keys [params body]} (val (first clauses))]
+        {:type "FunctionExpression" :params []
+         :body (splice-statements (map statement
+                                       (concat (generate-params params)
+                                               (map generate body))))})
+      {:type "FunctionExpression"
+       :params []
+       :body {:type "BlockStatement"
+              :body [{:type "SwitchStatement"
+                      :discriminant (identifier "arguments.length")
+                      :cases (map generate-fn-clause clauses)
+                      :lexical false}]}}))
+
+;; let, loop, recur
+
+(defn generate-bindings
+  ([bindings] (generate-bindings bindings []))
+  ([bindings locals]
+    (->> bindings
+         (map (fn [[k v]]
+           (assign (identifier (escape k))
+                   (if (in? locals v)
+                       (identifier (escape v))
+                       (generate v)))))
+         (map statement))))
+
 (defmethod generate-special :let [{:keys [bindings body]}]
   (splice-statements (map statement
                           (concat (when (seq bindings)
@@ -139,11 +189,6 @@
                   :body base :params []}
          :arguments []})))
 
-(defmethod generate-special :new [{:keys [ctor args]}]
-  {:type "NewExpression"
-   :callee (generate ctor)
-   :arguments (map generate args)})
-
 (defmethod generate-special :recur [{:keys [args recur-point]}]
   (let [rebinds (vec (map first (:bindings recur-point)))
         num-args (count args)
@@ -153,10 +198,6 @@
     (splice-statements (map statement
                             (concat (generate-bindings bindings temps)
                                     [{:type "ContinueStatement"}])))))
-
-(defmethod generate-special :throw [{:keys [env thrown]}]
-  {:type "ThrowStatement"
-   :argument (generate thrown)})
 
 ;; collections
 
