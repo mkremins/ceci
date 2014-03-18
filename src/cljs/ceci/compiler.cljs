@@ -1,7 +1,7 @@
 (ns ceci.compiler
   (:require [clojure.string :as string]
             [ceci.analyzer :as analyzer]
-            [ceci.generator :as emitter]
+            [ceci.emitter :as emitter]
             [ceci.expander :as expander]
             [ceci.reader :as reader]
             [ceci.repl :as repl])
@@ -37,4 +37,4 @@
   ([in-file out-file]
     (compile in-file out-file)))
 
-(set! *main-cli-fn* compile) ;; TODO this is only temporary!
+(set! *main-cli-fn* -main)
