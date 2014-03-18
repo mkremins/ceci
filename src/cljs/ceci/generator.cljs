@@ -89,6 +89,10 @@
    :callee (clj-ast->js-ast ctor)
    :arguments (map clj-ast->js-ast args)})
 
+(defmethod generate-special :throw [{:keys [env thrown]}]
+  {:type "ThrowStatement"
+   :argument (clj-ast->js-ast thrown)})
+
 ;; collections
 
 (defmulti generate-collection :type)
