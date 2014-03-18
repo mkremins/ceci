@@ -5,7 +5,7 @@
 
 ;; helpers
 
-(declare clj-ast->js-ast)
+(declare generate)
 
 (def escodegen (js/require "escodegen"))
 
@@ -50,7 +50,7 @@
            (assign (identifier (escape k))
                    (if (in? locals v)
                        (identifier (escape v))
-                       (clj-ast->js-ast v))))
+                       (generate v))))
          bindings)))
 
 ;; specials
@@ -61,15 +61,15 @@
   (reduce (fn [js-ast field]
             {:type "MemberExpression"
              :object js-ast
-             :property (clj-ast->js-ast field)
+             :property (generate field)
              :computed true})
-          (clj-ast->js-ast target) fields))
+          (generate target) fields))
 
 (defmethod generate-special :aset [{:keys [value] :as ast}]
-  (assign (generate-special (assoc ast :op :aget)) (clj-ast->js-ast value)))
+  (assign (generate-special (assoc ast :op :aget)) (generate value)))
 
 (defmethod generate-special :def [{:keys [name init]}]
-  (assign (clj-ast->js-ast name) (clj-ast->js-ast init)))
+  (assign (generate name) (generate init)))
 
 (defmethod generate-special :deftype [{:keys [name fields]}]
   (letfn [(assign-field [field]
@@ -78,7 +78,7 @@
                        :object {:type "ThisExpression"}
                        :property fname :computed false}
                       fname)))]
-    (assign (clj-ast->js-ast name)
+    (assign (generate name)
             {:type "FunctionExpression"
              :params (map (comp identifier escape) fields)
              :body {:type "BlockStatement"
@@ -86,16 +86,16 @@
 
 (defmethod generate-special :do [{:keys [env body]}]
   (let [base {:type "BlockStatement"
-              :body (map clj-ast->js-ast body)}]
+              :body (map generate body)}]
     (if (= (:context env) :expr)
         {:type "CallExpression"
          :callee {:type "FunctionExpression" :body base}}
         base)))
 
 (defmethod generate-special :if [{:keys [env test then else]}]
-  (let [base {:test (clj-ast->js-ast test)
-              :consequent (statement (clj-ast->js-ast then))
-              :alternate (statement (clj-ast->js-ast else))}
+  (let [base {:test (generate test)
+              :consequent (statement (generate then))
+              :alternate (statement (generate else))}
         type (if (= (:context env) :expr)
                  "ConditionalExpression"
                  "IfStatement")]
@@ -104,25 +104,25 @@
 (defmethod generate-special :invoke [{:keys [invoked args]}]
   {:type "CallExpression"
    :callee {:type "MemberExpression"
-            :object (clj-ast->js-ast invoked)
+            :object (generate invoked)
             :property (identifier "call")
             :computed false}
-   :arguments (concat [(literal nil)] (map clj-ast->js-ast args))})
+   :arguments (concat [(literal nil)] (map generate args))})
 
 (defmethod generate-special :let [{:keys [bindings body]}]
   {:type "BlockStatement"
    :body (map statement
               (concat (when (seq bindings) (generate-bindings bindings))
-                      (map clj-ast->js-ast body)))})
+                      (map generate body)))})
 
 (defmethod generate-special :new [{:keys [ctor args]}]
   {:type "NewExpression"
-   :callee (clj-ast->js-ast ctor)
-   :arguments (map clj-ast->js-ast args)})
+   :callee (generate ctor)
+   :arguments (map generate args)})
 
 (defmethod generate-special :throw [{:keys [env thrown]}]
   {:type "ThrowStatement"
-   :argument (clj-ast->js-ast thrown)})
+   :argument (generate thrown)})
 
 ;; collections
 
@@ -133,14 +133,14 @@
       (identifier "cljs.core.List.EMPTY")
       {:type "CallExpression"
        :callee (identifier "cljs.core.list")
-       :arguments (map clj-ast->js-ast children)}))
+       :arguments (map generate children)}))
 
 (defmethod generate-collection :vector [{:keys [children]}]
   (if (empty? children)
       (identifier "cljs.core.PersistentVector.EMPTY")
       {:type "CallExpression"
        :callee (identifier "cljs.core.PersistentVector.fromArray")
-       :arguments [(array (map clj-ast->js-ast children)) (literal true)]}))
+       :arguments [(array (map generate children)) (literal true)]}))
 
 (defmethod generate-collection :map [{:keys [children]}]
   (if (empty? children)
@@ -150,7 +150,7 @@
             vs (map second pairs)]
         {:type "NewExpression"
          :callee (identifier "cljs.core.PersistentArrayMap.fromArray")
-         :arguments [(array (map clj-ast->js-ast (interleave ks vs)))
+         :arguments [(array (map generate (interleave ks vs)))
                      (literal true) (literal false)]})))
 
 (defmethod generate-collection :set [{:keys [children]}]
@@ -158,7 +158,7 @@
       (identifier "cljs.core.PersistentHashSet.EMPTY")
       {:type "CallExpression"
        :callee (identifier "cljs.core.PersistentHashSet.fromArray")
-       :arguments [(array (map clj-ast->js-ast children)) (literal true)]}))
+       :arguments [(array (map generate children)) (literal true)]}))
 
 ;; constants
 
@@ -195,7 +195,7 @@
 
 (def block? #{:if :let :loop :recur})
 
-(defn clj-ast->js-ast
+(defn generate
   "Given an AST node `ast`, returns an equivalent JavaScript AST compatible
   with the SpiderMonkey Parser API (and, thus, Escodegen)."
   [{:keys [op] {:keys [context]} :env :as ast}]
@@ -208,4 +208,4 @@
         js-ast)))
 
 (defn emit [ast]
-  (.generate escodegen (clj->js (clj-ast->js-ast ast))))
+  (.generate escodegen (clj->js (generate ast))))
