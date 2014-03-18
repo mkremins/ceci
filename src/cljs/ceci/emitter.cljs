@@ -25,7 +25,12 @@
   {:type "ArrayExpression" :elements elements})
 
 (defn literal [value]
-  {:type "Literal" :value value})
+  (if (and (number? value) (neg? value))
+      ;; Escodegen chokes on negative number literals, because JavaScript
+      {:type "UnaryExpression"
+       :operator "-" :prefix true
+       :argument (literal (* -1 value))}
+      {:type "Literal" :value value}))
 
 (defn identifier [name]
   {:type "Identifier" :name name})
@@ -243,13 +248,6 @@
   {:type "NewExpression"
    :callee (identifier "cljs.core.Keyword")
    :arguments (map literal [nil (name form) (name form) (hash form)])})
-
-(defmethod generate-constant :number [{:keys [form]}]
-  (if (neg? form) ; Escodegen chokes on negative numbers, because JavaScript
-      {:type "UnaryExpression"
-       :operator "-" :prefix true
-       :argument (literal (* -1 form))}
-      (literal form)))
 
 (defmethod generate-constant :symbol [{:keys [form] {:keys [quoted?]} :env}]
   (let [name (name form) ns (namespace form)]
