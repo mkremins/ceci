@@ -1,7 +1,7 @@
 (ns ceci.compiler
   (:require [clojure.string :as string]
             [ceci.analyzer :as analyzer]
-            [ceci.emitter :as emitter]
+            [ceci.generator :as emitter]
             [ceci.expander :as expander]
             [ceci.reader :as reader]
             [ceci.repl :as repl])
@@ -24,7 +24,7 @@
        (map analyzer/form->ast)
        (map analyzer/analyze)
        (map emitter/emit)
-       (string/join "\n")))
+       (string/join ";\n")))
 
 (defn compile [in-file out-file]
   (spit out-file (write-js (slurp in-file))))
@@ -34,4 +34,4 @@
   ([in-file out-file]
     (compile in-file out-file)))
 
-(set! *main-cli-fn* -main)
+(set! *main-cli-fn* compile) ;; TODO this is only temporary!
