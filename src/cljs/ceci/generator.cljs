@@ -46,12 +46,26 @@
 (defn generate-bindings
   ([bindings] (generate-bindings bindings []))
   ([bindings locals]
-    (map (fn [[k v]]
+    (->> bindings
+         (map (fn [[k v]]
            (assign (identifier (escape k))
                    (if (in? locals v)
                        (identifier (escape v))
-                       (generate v))))
-         bindings)))
+                       (generate v)))))
+         (map statement))))
+
+(defn splice-statements
+  "Wraps `statements`, a seq of statement AST nodes, in a single BlockStatement
+  node. If any member of `statements` is itself a BlockStatement node, its body
+  will be unwrapped and \"spliced\" into the resulting block."
+  [statements]
+  {:type "BlockStatement"
+   :body (->> statements
+              (map (fn [{:keys [type] :as statement}]
+                     (if (= type "BlockStatement")
+                         (:body statement)
+                         [statement])))
+              (apply concat))})
 
 ;; specials
 
@@ -85,8 +99,7 @@
                     :body (map (comp statement assign-field) fields)}})))
 
 (defmethod generate-special :do [{:keys [body]}]
-  {:type "BlockStatement"
-   :body (map (comp statement generate) body)})
+  (splice-statements (map (comp statement generate) body)))
 
 (defmethod generate-special :if [{:keys [env test then else]}]
   (let [base {:test (generate test)
@@ -106,27 +119,25 @@
    :arguments (concat [(literal nil)] (map generate args))})
 
 (defmethod generate-special :let [{:keys [bindings body]}]
-  {:type "BlockStatement"
-   :body (map statement
-              (concat (when (seq bindings) (generate-bindings bindings))
-                      (map generate body)))})
+  (splice-statements (map statement
+                          (concat (when (seq bindings)
+                                    (generate-bindings bindings))
+                                  (map generate body)))))
 
 (defmethod generate-special :loop [{:keys [bindings body env]}]
-  (let [base
+  (let [binding-statements
+        (when (seq bindings) (generate-bindings bindings))
+        loop-statement
         {:type "WhileStatement" :test (literal true)
-         :body {:type "BlockStatement"
-                :body (map statement
-                           (concat (when (seq bindings)
-                                     (generate-bindings bindings))
-                                   (map generate body)
-                                   [{:type "BreakStatement"}]))}}]
-    (if (not= (:context env) :statement)
+         :body (splice-statements (concat (map (comp statement generate) body)
+                                          [{:type "BreakStatement"}]))}
+        base (splice-statements (concat binding-statements [loop-statement]))]
+    (if (= (:context env) :statement)
+        base
         {:type "CallExpression"
          :callee {:type "FunctionExpression"
-                  :body {:type "BlockStatement" :body [base]}
-                  :params []}
-         :arguments []}
-        base)))
+                  :body base :params []}
+         :arguments []})))
 
 (defmethod generate-special :new [{:keys [ctor args]}]
   {:type "NewExpression"
@@ -139,9 +150,9 @@
         temps (vec (take num-args (repeatedly gensym)))
         bindings (concat (map (juxt temps args) (range num-args))
                          (map (juxt rebinds temps) (range num-args)))]
-    {:type "BlockStatement"
-     :body (map statement (concat (generate-bindings bindings temps)
-                          [{:type "ContinueStatement"}]))}))
+    (splice-statements (map statement
+                            (concat (generate-bindings bindings temps)
+                                    [{:type "ContinueStatement"}])))))
 
 (defmethod generate-special :throw [{:keys [env thrown]}]
   {:type "ThrowStatement"
