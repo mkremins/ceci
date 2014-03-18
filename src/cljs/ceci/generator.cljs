@@ -58,8 +58,11 @@
 
 (defmethod generate-special :invoke [{:keys [invoked args]}]
   {:type "CallExpression"
-   :callee (clj-ast->js-ast invoked)
-   :arguments (map clj-ast->js-ast args)})
+   :callee {:type "MemberExpression"
+            :object (clj-ast->js-ast invoked)
+            :property (identifier "call")
+            :computed false}
+   :arguments (concat [(literal nil)] (map clj-ast->js-ast args))})
 
 (defmethod generate-special :new [{:keys [ctor args]}]
   {:type "NewExpression"
