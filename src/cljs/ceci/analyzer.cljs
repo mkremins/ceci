@@ -66,6 +66,11 @@
     :name (analyze (expr-env env) name)
     :init (analyze (expr-env env) (or init? nil-ast-node))))
 
+(defn analyze-deftype [env {[_ name fields & specs] :children :as ast}]
+  (assoc ast :op :deftype
+    :name (analyze (expr-env env) name)
+    :fields (map :form (:children fields))))
+
 (defn analyze-do [env {[_ & body] :children :as ast}]
   (assoc ast :op :do
     :body (analyze-block env body)))
@@ -176,6 +181,7 @@
   {'aget analyze-aget
    'aset analyze-aset
    'def analyze-def
+   'deftype* analyze-deftype
    'do analyze-do
    'fn* analyze-fn
    'if analyze-if

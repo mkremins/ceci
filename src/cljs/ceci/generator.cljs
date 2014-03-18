@@ -35,6 +35,9 @@
       {:type "ExpressionStatement"
        :expression expr-or-statement}))
 
+(defn assign [left right]
+  {:type "AssignmentExpression" :operator "=" :left left :right right})
+
 ;; specials
 
 (defmulti generate-special :op)
@@ -48,16 +51,23 @@
           (clj-ast->js-ast target) fields))
 
 (defmethod generate-special :aset [{:keys [value] :as ast}]
-  {:type "AssignmentExpression"
-   :operator "="
-   :left (generate-special (assoc ast :op :aget))
-   :right (clj-ast->js-ast value)})
+  (assign (generate-special (assoc ast :op :aget)) (clj-ast->js-ast value)))
 
 (defmethod generate-special :def [{:keys [name init]}]
-  {:type "AssignmentExpression"
-   :operator "="
-   :left (clj-ast->js-ast name)
-   :right (clj-ast->js-ast init)})
+  (assign (clj-ast->js-ast name) (clj-ast->js-ast init)))
+
+(defmethod generate-special :deftype [{:keys [name fields]}]
+  (letfn [(assign-field [field]
+            (let [fname (identifier (escape field))]
+              (assign {:type "MemberExpression"
+                       :object {:type "ThisExpression"}
+                       :property fname :computed false}
+                      fname)))]
+    (assign (clj-ast->js-ast name)
+            {:type "FunctionExpression"
+             :params (map (comp identifier escape) fields)
+             :body {:type "BlockStatement"
+                    :body (map (comp statement assign-field) fields)}})))
 
 (defmethod generate-special :do [{:keys [env body]}]
   (let [base {:type "BlockStatement"
