@@ -204,6 +204,37 @@
                             (concat (generate-bindings bindings temps)
                                     [{:type "ContinueStatement"}])))))
 
+;; ns
+
+(defn itself-or-empty-obj [ns-name-part]
+  {:type "LogicalExpression" :operator "||"
+   :left (identifier (escape ns-name-part))
+   :right {:type "ObjectExpression" :properties []}})
+
+(defn define-if-undefined [ns-name-part]
+  (assign (identifier (escape ns-name-part))
+          (itself-or-empty-obj ns-name-part)))
+
+(defn ns-name-parts [ns-name]
+  (let [subparts (string/split (str ns-name) #"\.")]
+    (loop [parts [] idx 0]
+      (if-let [subpart (get subparts idx)]
+        (recur (conj parts (str (when (seq parts) (str (peek parts) ".")) subpart))
+               (inc idx))
+        parts))))
+
+(defmethod generate-special :ns [{:keys [name]}]
+  (let [name-parts (ns-name-parts name)
+        first-statement
+        {:type "VariableDeclaration" :kind "var"
+         :declarations [{:type "VariableDeclarator"
+                         :id (identifier (escape (first name-parts)))
+                         :init (itself-or-empty-obj (first name-parts))}]}]
+    {:type "BlockStatement"
+     :body (concat [first-statement]
+                   (map (comp statement define-if-undefined)
+                        (rest name-parts)))}))
+
 ;; collections
 
 (defmulti generate-collection :type)

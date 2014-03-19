@@ -1,4 +1,4 @@
-(ns ceci.env
+(ns ceci.namespaces
   (:refer-clojure :exclude [create-ns ns ns-name resolve])
   (:require [clojure.string :as string]
             [ceci.util :refer [update]]))
@@ -43,6 +43,10 @@
     (swap! namespaces assoc name ns-spec)))
 
 (create-ns 'user)
+
+(defn enter-ns! [[_ name & specs]]
+  (create-ns name)
+  (reset! ns-name name))
 
 ;; the `ns` macro
 

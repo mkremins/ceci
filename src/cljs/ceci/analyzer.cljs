@@ -1,5 +1,6 @@
 (ns ceci.analyzer
   (:require [ceci.emitter :as emitter]
+            [ceci.namespaces :as namespaces]
             [ceci.util :refer [raise update]]))
 
 ;; AST creation
@@ -85,6 +86,10 @@
   (assoc ast :op :new
     :ctor (analyze (expr-env env) ctor)
     :args (map (partial analyze (expr-env env)) args)))
+
+(defn analyze-ns [env {[_ ns-name] :children :as ast}]
+  (namespaces/enter-ns! (:form ast))
+  (assoc ast :op :ns :name (:form ns-name)))
 
 (defn analyze-quote [env {[_ ast] :children}]
   (analyze (assoc env :quoted? true) ast))
@@ -188,6 +193,7 @@
    'let* analyze-let
    'loop* analyze-loop
    'new analyze-new
+   'ns analyze-ns
    'quote analyze-quote
    'recur analyze-recur
    'throw analyze-throw})
@@ -207,7 +213,7 @@
         (= sym (symbol "false")) false-ast-node
         (= sym (symbol "nil")) nil-ast-node
         ((set (:locals env)) sym) ast
-        :else (assoc ast :form (ceci.env/resolve sym))))
+        :else (assoc ast :form (namespaces/resolve sym))))
 
 (defn analyze
   ([ast] (analyze {:context :statement :locals [] :quoted? false} ast))
