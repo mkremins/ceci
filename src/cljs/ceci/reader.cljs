@@ -163,6 +163,8 @@
 (defn expand-anon-fn-arg [form]
   (let [arg-name (subs (str form) 1)
         arg-name (if (= arg-name "") "1" arg-name)]
+    (when-not (or (parse-int arg-name) (= arg-name "&"))
+      (reader-error (str "invalid anonymous function argument form " form)))
     (gensym (if (= arg-name "&")
                 "rest__"
                 (str "p" arg-name "__")))))
@@ -193,7 +195,7 @@
   (let [[reader list-form] (read-list reader)
         arg-syms (find-anon-fn-args list-form)
         args-map (zipmap arg-syms (map expand-anon-fn-arg arg-syms))
-        body-form (walk/postwalk-replace args-map list-form)
+        body-form (walk/prewalk-replace args-map list-form)
         params-form (make-anon-fn-params args-map)]
     [reader (list 'fn* params-form body-form)]))
 
