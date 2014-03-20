@@ -13,11 +13,7 @@
        (map expander/expand-all)
        (map analyzer/form->ast)
        (map analyzer/analyze)
-       (map emitter/emit)
-       (map #(if (= (last %) ";")
-                 (str % "\n\n")
-                 (str % ";\n\n")))
-       (string/join)))
+       (emitter/emit-all)))
 
 (defn eval-print!
   "Compiles a `line` of ClojureScript code to JavaScript, then immediately

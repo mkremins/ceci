@@ -23,11 +23,7 @@
        (map expander/expand-all)
        (map analyzer/form->ast)
        (map analyzer/analyze)
-       (map emitter/emit)
-       (map #(if (= (last %) ";")
-                 (str % "\n\n")
-                 (str % ";\n\n")))
-       (string/join)))
+       (emitter/emit-all)))
 
 (defn compile [in-file out-file]
   (spit out-file (write-js (slurp in-file))))

@@ -311,5 +311,11 @@
         {:type "ReturnStatement" :argument js-ast}
         js-ast)))
 
+(defn emit-all [asts]
+  (let [top-level-js-ast
+        (-> (splice-statements (map (comp statement generate) asts))
+            (assoc :type "Program"))]
+    (.generate escodegen (clj->js top-level-js-ast))))
+
 (defn emit [ast]
   (.generate escodegen (clj->js (generate ast))))
