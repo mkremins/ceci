@@ -145,6 +145,7 @@
                       ana/form->ast
                       (ana/analyze {:context :expr :locals [] :quoted? false})
                       emitter/emit)
+        compiled (str "(" compiled ")") ; make function expr eval-compatible
         macro (js/eval compiled)]
     (install-macro! name macro)
     (list 'def name fn-form)))
