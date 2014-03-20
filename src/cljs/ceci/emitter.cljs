@@ -137,7 +137,9 @@
                             {:type "MemberExpression"
                              :object args-obj
                              :property idx :computed true}))))]
-      (map generate-param (range (count params))))))
+      (->> (range (count params))
+           (remove #(= (get params %) '_))
+           (map generate-param)))))
 
 (defn generate-fn-clause [[num-params {:keys [params body]}]]
   {:type "SwitchCase"
