@@ -1,27 +1,28 @@
 (ns ceci.namespaces
-  (:refer-clojure :exclude [create-ns ns ns-name resolve])
+  (:refer-clojure :exclude [ns-name resolve])
   (:require [clojure.string :as string]
-            [ceci.util :refer [update]]))
+            [ceci.util :refer [raise update]]))
 
 ;; namespace management
 
 (def namespaces (atom {}))
-(def ns-name (atom 'user))
+(def ns-name (atom nil))
 
 (defn require-ns
-  "Within `ns-spec`, requires the namespace `required-ns` under the alias
-  `ns-alias`."
-  [ns-spec required-ns ns-alias]
-  (if ns-alias
-      (update ns-spec :require merge {ns-alias required-ns})
-      ns-spec))
+  "Adds a dependency on the namespace `required-ns` to `ns-spec`. If `ns-alias`
+  is provided, `required-ns` will be aliased to `ns-alias`; otherwise, it will
+  be required under its own fully qualified name."
+  ([ns-spec required-ns]
+    (require-ns ns-spec required-ns required-ns))
+  ([ns-spec required-ns ns-alias]
+    (update ns-spec :required merge {ns-alias required-ns})))
 
 (defn refer-symbols
   "Within `ns-spec`, refers all symbols in `referred-symbols` to the symbols
   with the same names defined in `required-ns`."
   [ns-spec required-ns referred-symbols]
   (if referred-symbols
-      (update ns-spec :refer merge
+      (update ns-spec :referred merge
               (->> referred-symbols
                    (map (juxt identity (constantly required-ns)))
                    (into {})))
@@ -34,41 +35,53 @@
     nil? not not= number? or partial print println pr prn pr-str reduce remove
     reset! seq seq? set set? str swap! update-in val vals vec vector vector?])
 
-(defn create-ns
-  "Creates a new namespace called `name`, populated with public defs from
-  `cljs.core`, and registers the newly created namespace in the global
-  `namespaces` atom."
-  [name]
-  (let [ns-spec (refer-symbols {} 'cljs.core core-defs)]
-    (swap! namespaces assoc name ns-spec)))
+(defn add-clause
+  "Given a namespace specification `ns-spec` and a :require form from a
+  namespace declaration, parses the :require form and returns a modified copy
+  of `ns-spec` with the appropriate dependency information added."
+  [ns-spec [clause-type & libspecs]]
+  (if (not= clause-type :require)
+      ns-spec ; ignore clauses that aren't of form (:require ...)
+      (reduce (fn [ns-spec libspec]
+                (cond (symbol? libspec) (require-ns ns-spec libspec)
+                      (vector? libspec)
+                      (let [required-ns (first libspec)
+                            {referred-syms :refer ns-alias :as
+                             :or {referred-syms [] ns-alias required-ns}}
+                            (apply hash-map (rest libspec))]
+                        (-> ns-spec
+                            (require-ns required-ns ns-alias)
+                            (refer-symbols required-ns referred-syms)))
+                      :else (raise "invalid libspec" libspec)))
+              ns-spec libspecs)))
 
-(create-ns 'user)
+(defn parse-ns-decl
+  "Given a namespace declaration form, parses it and returns a valid namespace
+  specification – a map containing keys :name, :required and :referred, where:
 
-(defn enter-ns! [[_ name & specs]]
-  (create-ns name)
-  (reset! ns-name name))
+     :name => a symbol that gives the namespace's fully qualified name
+     :required => a map from local namespace aliases to required namespaces'
+       fully qualified names
+     :referred => a map from locally referred symbols to their defining
+       namespaces' fully qualified names
 
-;; the `ns` macro
+  By default, all namespaces depend on `cljs.core` and refer all the symbols in
+  `core-defs` from the core namespace."
+  [[_ name & clauses]]
+  (let [ns-spec (refer-symbols {:name name} 'cljs.core core-defs)]
+    (reduce add-clause ns-spec clauses)))
 
-(defn add-clause [ns-spec [type & body]]
-  (if (= type :require)
-      (reduce (fn [ns-spec [required-ns & opts]]
-                (let [{referred-symbols :refer ns-alias :as}
-                      (apply hash-map opts)]
-                  (-> ns-spec
-                    (require-ns required-ns ns-alias)
-                    (refer-symbols required-ns referred-symbols))))
-              ns-spec body)
-      ns-spec))
+(defn enter-ns!
+  "Given a namespace declaration form `ns-decl`, parses it to produce a
+  namespace specification (using `parse-ns-decl`) and immediately switches into
+  the newly created namespace."
+  [ns-decl]
+  (let [{:keys [name] :as ns-spec} (parse-ns-decl ns-decl)]
+    (swap! namespaces assoc name ns-spec)
+    (reset! ns-name name)
+    ns-spec))
 
-(defn ns [new-ns-name & clauses]
-  (let [ns-spec
-        (loop [ns-spec {} clauses clauses]
-          (if-let [clause (first clauses)]
-                  (recur (add-clause ns-spec clause) (rest clauses))
-                  ns-spec))]
-    `(do (swap! clueless.env/namespaces assoc ~new-ns-name ~ns-spec)
-         (reset! clueless.env/ns-name ~new-ns-name))))
+(enter-ns! '(ns user))
 
 ;; symbol expansion
 
@@ -80,10 +93,10 @@
           :else parts)))
 
 (defn resolve-ns-alias [ns-alias ns-spec]
-  (when ns-alias (get-in ns-spec [:require (symbol ns-alias)])))
+  (when ns-alias (get-in ns-spec [:required (symbol ns-alias)])))
 
 (defn resolve-defining-ns [sym-name ns-spec]
-  (get-in ns-spec [:refer (symbol sym-name)]))
+  (get-in ns-spec [:referred (symbol sym-name)]))
 
 (defn namespace-named [ns-name]
   (get @namespaces (symbol ns-name)))
