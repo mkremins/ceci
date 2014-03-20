@@ -30,11 +30,12 @@
       ns-spec))
 
 (def core-defs
-  '[+ - * / = > >= < <= and apply assoc assoc-in boolean comp concat conj cons
-    constantly dec dissoc filter fnil get get-in hash hash-map identity
-    inc interpose into juxt key keys keyword keyword? list list? map map? merge
-    nil? not not= number? or partial print println pr prn pr-str reduce remove
-    reset! seq seq? set set? str swap! update-in val vals vec vector vector?])
+  '[+ - * / = > >= < <= and apply assoc assoc-in atom boolean comp concat conj
+    cons constantly dec dissoc empty? filter first fnil gensym get get-in hash
+    hash-map identity inc interleave interpose into juxt key keys keyword
+    keyword? list list? map map? merge nil? not not= number? or partial
+    partition print println pr prn pr-str reduce remove reset! rest reverse
+    second seq seq? set set? str swap! update-in val vals vec vector vector?])
 
 (defn add-clause
   "Given a namespace specification `ns-spec` and a :require form from a
