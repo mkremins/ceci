@@ -223,11 +223,17 @@
                    raw-params)]
     [(update env :locals concat params) params]))
 
+(defn analyze-clause-body [env exprs]
+  (let [body-env (assoc env :context :statement)
+        return-env (assoc env :context :return)]
+    (conj (vec (map (partial analyze body-env) (butlast exprs)))
+          (analyze return-env (last exprs)))))
+
 (defn analyze-clauses [env clauses]
   (loop [analyzed {} env env clauses clauses]
     (if-let [[params & body] (first clauses)]
       (let [[env params] (analyze-params env params)
-            clause {:params params :body (analyze-block env body)}]
+            clause {:params params :body (analyze-clause-body env body)}]
         (recur (assoc analyzed (count params) clause) env (rest clauses)))
       analyzed)))
 
