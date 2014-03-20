@@ -3,6 +3,9 @@
 (defn in? [coll item]
   (some (partial = item) coll))
 
+(defn mapk [f m]
+  (map (fn [[k v]] [(f k) v]) m))
+
 (defn update [m k f & args]
   (apply (partial update-in m [k] f) args))
 

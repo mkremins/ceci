@@ -1,7 +1,8 @@
 (ns ceci.reader
-  (:require [clojure.string :as string]
-            [ceci.util :refer [merge-meta metadatable?]])
-  (:refer-clojure :exclude [*data-readers* read-string]))
+  (:refer-clojure :exclude [*data-readers* read-string])
+  (:require [ceci.util :refer [mapk merge-meta metadatable?]]
+            [clojure.string :as string]
+            [clojure.walk :as walk]))
 
 (defn reader-error [msg]
   (throw (js/Error. (str "ReaderError: " msg))))
@@ -151,6 +152,51 @@
                 (parse-ratio buffer)
                 (parse-symbol buffer))]))
 
+;; anonymous functions
+
+(defn find-anon-fn-args [form]
+  (->> form
+       (tree-seq coll? identity)
+       (filter #(and (symbol? %) (= (first (str %)) "%")))
+       (distinct)))
+
+(defn expand-anon-fn-arg [form]
+  (let [arg-name (subs (str form) 1)
+        arg-name (if (= arg-name "") "1" arg-name)]
+    (gensym (if (= arg-name "&")
+                "rest__"
+                (str "p" arg-name "__")))))
+
+(defn make-anon-fn-params [args-map]
+  (let [params (->> args-map
+                    (mapk #(subs (str %) 1))
+                    (mapk #(if (= % "") "1" %))
+                    (mapk parse-int)
+                    (mapk (fnil dec Infinity))
+                    (into {}))
+        rest-param (get params Infinity)
+        params (if rest-param (dissoc params Infinity) params)
+        last-idx (apply max (keys params))]
+    (if (nil? last-idx)
+        (if rest-param ['& rest-param] [])
+        (loop [params-form [] idx 0]
+          (let [param (get params idx)]
+            (cond (= idx last-idx)
+                  (let [params-form (conj params-form param)]
+                    (if rest-param
+                        (-> params-form (conj '&) (conj rest-param))
+                        params-form))
+                  param (recur (conj params-form param) (inc idx))
+                  :else (recur (conj params-form '_) (inc idx))))))))
+
+(defn read-anon-fn [reader]
+  (let [[reader list-form] (read-list reader)
+        arg-syms (find-anon-fn-args list-form)
+        args-map (zipmap arg-syms (map expand-anon-fn-arg arg-syms))
+        body-form (walk/postwalk-replace args-map list-form)
+        params-form (make-anon-fn-params args-map)]
+    [reader (list 'fn* params-form body-form)]))
+
 ;; whitespace and comment forms
 
 (declare read-next-form)
@@ -214,7 +260,7 @@
 
 (defn read-dispatch [reader]
   (condp = (curr-ch reader)
-;    "(" (read-anon-fn reader)
+    "(" (read-anon-fn reader)
     "{" (read-set reader)
     "\"" (read-regex reader)
     "'" (read-var reader)

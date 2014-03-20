@@ -122,7 +122,7 @@
 
 (defn node-type [form]
   (cond (keyword? form) :keyword
-        (list? form) :list
+        (or (list? form) (seq? form)) :list
         (map? form) :map
         (nil? form) :nil
         (number? form) :number
