@@ -55,6 +55,7 @@
   [statements]
   {:type "BlockStatement"
    :body (->> statements
+              (map statement)
               (map (fn [{:keys [type] :as statement}]
                      (if (= type "BlockStatement")
                          (:body statement)
@@ -93,7 +94,7 @@
                     :body (map (comp statement assign-field) fields)}})))
 
 (defmethod generate-special :do [{:keys [body]}]
-  (splice-statements (map (comp statement generate) body)))
+  (splice-statements (map generate body)))
 
 (defmethod generate-special :if [{:keys [env test then else]}]
   (let [base {:test (generate test)
@@ -136,7 +137,7 @@
             [])]
     {:type "FunctionExpression"
      :params (map identifier fixed-params)
-     :body (splice-statements (map statement (concat bindings body)))}))
+     :body (splice-statements (concat bindings body))}))
 
 (defn generate-fn-case [[num-params {:keys [variadic?] :as clause}]]
   {:type "SwitchCase" :test (when-not variadic? (literal num-params))
@@ -172,17 +173,15 @@
          (map statement))))
 
 (defmethod generate-special :let [{:keys [bindings body]}]
-  (splice-statements (map statement
-                          (concat (when (seq bindings)
-                                    (generate-bindings bindings))
-                                  (map generate body)))))
+  (splice-statements (concat (when (seq bindings) (generate-bindings bindings))
+                             (map generate body))))
 
 (defmethod generate-special :loop [{:keys [bindings body env]}]
   (let [binding-statements
         (when (seq bindings) (generate-bindings bindings))
         loop-statement
         {:type "WhileStatement" :test (literal true)
-         :body (splice-statements (concat (map (comp statement generate) body)
+         :body (splice-statements (concat (map generate body)
                                           [{:type "BreakStatement"}]))}
         base (splice-statements (concat binding-statements [loop-statement]))]
     (if (= (:context env) :statement)
@@ -198,9 +197,8 @@
         temps (vec (take num-args (repeatedly gensym)))
         bindings (concat (map (juxt temps args) (range num-args))
                          (map (juxt rebinds temps) (range num-args)))]
-    (splice-statements (map statement
-                            (concat (generate-bindings bindings temps)
-                                    [{:type "ContinueStatement"}])))))
+    (splice-statements (concat (generate-bindings bindings temps)
+                               [{:type "ContinueStatement"}]))))
 
 ;; ns
 
@@ -311,7 +309,7 @@
 
 (defn emit-all [asts]
   (let [top-level-js-ast
-        (-> (splice-statements (map (comp statement generate) asts))
+        (-> (splice-statements (map generate asts))
             (assoc :type "Program"))]
     (.generate escodegen (clj->js top-level-js-ast))))
 
