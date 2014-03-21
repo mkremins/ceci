@@ -123,42 +123,40 @@
 
 ;; fn
 
-(defn generate-params [{:keys [params variadic?]}]
-  (when (seq params)
-    (let [rest-param-idx (when variadic? (dec (count params)))
-          generate-param
-          (fn [idx]
-            (let [param (get params idx) rest-param? (= idx rest-param-idx)
-                  idx   (literal idx)    args-obj    (identifier "arguments")]
-              (assign (identifier param)
-                      (if rest-param?
-                          {:type "CallExpression"
-                           :callee (identifier "Array.prototype.slice.call")
-                           :arguments [args-obj idx]}
-                          {:type "MemberExpression" :computed true
-                           :object args-obj :property idx}))))]
-      (->> (range (count params))
-           (remove #(= (get params %) '_))
-           (map generate-param)))))
+(defn generate-fn-clause [{:keys [body params variadic?]}]
+  (let [fixed-params (if variadic? (butlast params) params)
+        body (map generate body)
+        bindings
+        (if variadic?
+            [(assign (identifier (last params))
+                     {:type "CallExpression"
+                      :callee (identifier "Array.prototype.slice.call")
+                      :arguments [(identifier "arguments")
+                                  (literal (count fixed-params))]})]
+            [])]
+    {:type "FunctionExpression"
+     :params (map identifier fixed-params)
+     :body (splice-statements (map statement (concat bindings body)))}))
 
-(defn generate-fn-clause [[num-params {:keys [body variadic?] :as clause}]]
+(defn generate-fn-case [[num-params {:keys [variadic?] :as clause}]]
   {:type "SwitchCase" :test (when-not variadic? (literal num-params))
-   :consequent (map statement (concat (generate-params clause)
-                                      (map generate body)))})
+   :consequent
+   [{:type "ReturnStatement"
+     :argument {:type "CallExpression"
+                :callee {:type "MemberExpression"
+                         :object (generate-fn-clause clause)
+                         :property (identifier "apply") :computed false}
+                :arguments [(literal nil) (identifier "arguments")]}}]})
 
 (defmethod generate-special :fn [{:keys [clauses]}]
-  (let [base {:type "FunctionExpression" :params []}]
-    (assoc base :body
-           (if (= (count clauses) 1)
-               (let [{:keys [body] :as clause} (val (first clauses))]
-                 (splice-statements (map statement
-                                         (concat (generate-params clause)
-                                                 (map generate body)))))
-               {:type "BlockStatement"
-                :body [{:type "SwitchStatement"
-                        :discriminant (identifier "arguments.length")
-                        :cases (map generate-fn-clause clauses)
-                        :lexical false}]}))))
+  (if (= (count clauses) 1)
+      (generate-fn-clause (val (first clauses)))
+      {:type "FunctionExpression" :params []
+       :body {:type "BlockStatement"
+              :body [{:type "SwitchStatement"
+                      :discriminant (identifier "arguments.length")
+                      :cases (map generate-fn-case clauses)
+                      :lexical false}]}}))
 
 ;; let, loop, recur
 
