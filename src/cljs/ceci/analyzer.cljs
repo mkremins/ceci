@@ -222,14 +222,17 @@
           (analyze return-env (last exprs)))))
 
 (defn analyze-clauses [env clauses]
-  (loop [analyzed {} clauses clauses]
+  (loop [analyzed {} allow-variadic? true clauses clauses]
     (if-let [[params & body] (first clauses)]
       (let [params (map :form (:children params))
             body-env (update env :locals concat params)
-            clause {:params (vec (remove #{'&} params))
-                    :variadic? (in? params '&)
+            variadic? (in? params '&)
+            clause {:params (vec (remove #{'&} params)) :variadic? variadic?
                     :body (analyze-clause-body body-env body)}]
-        (recur (assoc analyzed (count params) clause) (rest clauses)))
+        (when (and variadic? (not allow-variadic?))
+          (raise "only one variadic clause allowed per function"))
+        (recur (assoc analyzed (count params) clause)
+               (not variadic?) (rest clauses)))
       analyzed)))
 
 (defn extract-clauses

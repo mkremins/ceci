@@ -141,9 +141,8 @@
            (remove #(= (get params %) '_))
            (map generate-param)))))
 
-(defn generate-fn-clause [[num-params {:keys [body] :as clause}]]
-  {:type "SwitchCase"
-   :test (literal num-params)
+(defn generate-fn-clause [[num-params {:keys [body variadic?] :as clause}]]
+  {:type "SwitchCase" :test (when-not variadic? (literal num-params))
    :consequent (map statement (concat (generate-params clause)
                                       (map generate body)))})
 

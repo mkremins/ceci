@@ -27,6 +27,8 @@
                          " (source missing)"))))
 
 (defn raise
+  ([message]
+    (throw (js/Error. (str "Compilation error: " message))))
   ([message form]
     (if-let [{:keys [line column]} (meta form)]
       (raise message form line column)
