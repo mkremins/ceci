@@ -139,10 +139,6 @@
         (assoc ast :op :coll :children (map form->ast form))
         (assoc ast :op :const))))
 
-;; AST analysis
-
-(declare analyze)
-
 (def true-ast-node
   {:op :const :type :bool :form true})
 
@@ -151,6 +147,12 @@
 
 (def nil-ast-node
   {:op :const :type :nil :form nil})
+
+;; AST analysis
+
+(declare analyze)
+
+(def analyzed-defs (atom {}))
 
 (defn expr-env [env]
   (assoc env :context :expr))
@@ -178,9 +180,13 @@
       :value (analyze (expr-env env) value))))
 
 (defn analyze-def [env {[_ name & [init?]] :children :as ast}]
-  (assoc ast :op :def
-    :name (analyze (expr-env env) name)
-    :init (analyze (expr-env env) (or init? nil-ast-node))))
+  (let [name-node (analyze (expr-env env) name)
+        name-form (:form name-node)
+        init-node (analyze (expr-env env) (or init? nil-ast-node))]
+    (when (contains? @analyzed-defs name-form)
+      (raise "illegal redefinition of an already-defined symbol" (:form ast)))
+    (swap! analyzed-defs assoc name-form init-node)
+    (assoc ast :op :def :name name-node :init init-node)))
 
 (defn analyze-deftype [env {[_ name fields & specs] :children :as ast}]
   (assoc ast :op :deftype
