@@ -1,7 +1,7 @@
 (ns ceci.analyzer
   (:refer-clojure :exclude [ns-name resolve])
   (:require [ceci.emitter :as emitter]
-            [ceci.util :refer [raise update]]
+            [ceci.util :refer [in? raise update]]
             [clojure.string :as string]))
 
 ;; namespace management
@@ -215,14 +215,6 @@
 
 ;; fn forms
 
-(defn analyze-params [env {:keys [children]}]
-  (let [raw-params (vec (map :form children))
-        params (if (= (second (reverse raw-params)) '&)
-                   (conj (vec (drop-last 2 raw-params))
-                         (with-meta (last raw-params) {:rest-param? true}))
-                   raw-params)]
-    [(update env :locals concat params) params]))
-
 (defn analyze-clause-body [env exprs]
   (let [body-env (assoc env :context :statement)
         return-env (assoc env :context :return)]
@@ -230,11 +222,14 @@
           (analyze return-env (last exprs)))))
 
 (defn analyze-clauses [env clauses]
-  (loop [analyzed {} env env clauses clauses]
+  (loop [analyzed {} clauses clauses]
     (if-let [[params & body] (first clauses)]
-      (let [[env params] (analyze-params env params)
-            clause {:params params :body (analyze-clause-body env body)}]
-        (recur (assoc analyzed (count params) clause) env (rest clauses)))
+      (let [params (map :form (:children params))
+            body-env (update env :locals concat params)
+            clause {:params (vec (remove #{'&} params))
+                    :variadic? (in? params '&)
+                    :body (analyze-clause-body body-env body)}]
+        (recur (assoc analyzed (count params) clause) (rest clauses)))
       analyzed)))
 
 (defn extract-clauses
@@ -254,9 +249,8 @@
     (raise "invalid function definition" (:form ast))))
 
 (defn analyze-fn [env ast]
-  (let [clauses (extract-clauses ast)]
-    (assoc ast :op :fn
-      :clauses (analyze-clauses env clauses))))
+  (assoc ast :op :fn
+    :clauses (analyze-clauses env (extract-clauses ast))))
 
 ;; let forms
 
