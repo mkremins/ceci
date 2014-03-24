@@ -231,6 +231,7 @@
   (loop [analyzed {} allow-variadic? true clauses clauses]
     (if-let [[params & body] (first clauses)]
       (let [params (map :form (:children params))
+            _ (assert (every? symbol? params))
             body-env (update env :locals concat params)
             variadic? (in? params '&)
             clause {:params (vec (remove #{'&} params)) :variadic? variadic?
@@ -273,10 +274,11 @@
 
 (defn analyze-bindings [env bindings]
   (loop [env env analyzed [] idx 0]
-    (if-let [[left-hand right-hand] (get bindings idx)]
-      (recur (update env :locals conj left-hand)
-             (conj analyzed [left-hand (analyze (expr-env env) right-hand)])
-             (inc idx))
+    (if-let [[bform bound] (get bindings idx)]
+      (do (assert (symbol? bform))
+          (recur (update env :locals conj bform)
+                 (conj analyzed [bform (analyze (expr-env env) bound)])
+                 (inc idx)))
       [env analyzed])))
 
 (defn analyze-let [env {[_ bindings & body] :children :as ast}]
