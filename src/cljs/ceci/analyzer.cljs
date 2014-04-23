@@ -87,13 +87,6 @@
 
 ;; symbol expansion
 
-(defn symbol-parts [sym]
-  (let [sym-str (str sym)
-        parts (string/split sym-str #"/" 2)]
-    (cond (every? empty? parts) [nil "/"]
-          (= (count parts) 1) [nil (first parts)]
-          :else parts)))
-
 (defn resolve-ns-alias [ns-alias ns-spec]
   (when ns-alias (get-in ns-spec [:required (symbol ns-alias)])))
 
@@ -110,13 +103,13 @@
   namespace specification if none is specified)."
   ([sym] (resolve sym (namespace-named @ns-name)))
   ([sym ns-spec]
-    (let [[ns-part name-part] (symbol-parts sym)
-          ns-part (or (resolve-ns-alias ns-part ns-spec)
-                      (when (or (namespace-named ns-part) (= ns-part "js"))
-                            ns-part)
-                      (resolve-defining-ns name-part ns-spec)
-                      (str @ns-name))]
-      (symbol ns-part name-part))))
+    (let [ns   (namespace sym)
+          name (name sym)
+          ns   (or (resolve-ns-alias ns ns-spec)
+                   (when (or (namespace-named ns) (= ns "js")) ns)
+                   (resolve-defining-ns name ns-spec)
+                   (str @ns-name))]
+      (symbol ns name))))
 
 ;; AST creation
 
