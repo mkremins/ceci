@@ -38,7 +38,7 @@
   []
   (js/eval "user = {};")
   (log! "Ceci ClojureScript REPL v0.1.0"
-        "Clojure 1.5.1 / ClojureScript 0.0-2173"
+        "Clojure 1.6.0 / ClojureScript 0.0-2202"
         "(CTRL+C to quit)\n"))
 
 (defn launch!
