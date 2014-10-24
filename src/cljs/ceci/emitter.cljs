@@ -1,7 +1,6 @@
 (ns ceci.emitter
   (:refer-clojure :exclude [array])
-  (:require [ceci.util :refer [in?]]
-            [clojure.string :as string]))
+  (:require [clojure.string :as str]))
 
 ;; helpers
 
@@ -9,58 +8,52 @@
 
 (def escodegen (js/require "escodegen"))
 
-(defn escape [s]
+(defn munge [s]
   (-> (name s)
-      (string/replace #"\+" "_PLUS_")
-      (string/replace #"-" "_")
-      (string/replace #"\*" "_STAR_")
-      (string/replace #"/" "_SLASH_")
-      (string/replace #"\?" "_QMARK_")
-      (string/replace #"!" "_BANG_")
-      (string/replace #"<" "_LT_")
-      (string/replace #">" "_GT_")
-      (string/replace #"=" "_EQ_")))
+      (str/replace #"\+" "_PLUS_")
+      (str/replace #"-" "_")
+      (str/replace #"\*" "_STAR_")
+      (str/replace #"/" "_SLASH_")
+      (str/replace #"\?" "_QMARK_")
+      (str/replace #"!" "_BANG_")
+      (str/replace #"<" "_LT_")
+      (str/replace #">" "_GT_")
+      (str/replace #"=" "_EQ_")))
 
 (defn array [elements]
-  {:type "ArrayExpression" :elements elements})
+  {:type :ArrayExpression :elements elements})
 
 (defn literal [value]
   (if (and (number? value) (neg? value))
-      ;; Escodegen chokes on negative number literals, because JavaScript
-      {:type "UnaryExpression"
-       :operator "-" :prefix true
-       :argument (literal (* -1 value))}
-      {:type "Literal" :value value}))
+    ;; Escodegen chokes on negative number literals, because JavaScript
+    {:type :UnaryExpression
+     :operator "-" :prefix true
+     :argument (literal (* -1 value))}
+    {:type :Literal :value value}))
 
 (defn identifier [name]
-  {:type "Identifier" :name name})
+  {:type :Identifier :name name})
 
 (defn statement
-  "If the Escodegen-compatible JavaScript AST node `expr-or-statement` is a
+  "If the Escodegen-compatible JavaScript AST node `expr-or-stmt` is a
   statement node, returns it verbatim. Otherwise, coerces it to a statement
   node by wrapping it in an ExpressionStatement node and returns the result."
-  [{:keys [type] :as expr-or-statement}]
-  (if (re-find #"Statement" type)
-      expr-or-statement
-      {:type "ExpressionStatement"
-       :expression expr-or-statement}))
+  [expr-or-stmt]
+  (if (re-find #"Statement|Declaration" (name (:type expr-or-stmt)))
+    expr-or-stmt
+    {:type :ExpressionStatement :expression expr-or-stmt}))
 
 (defn assign [left right]
-  {:type "AssignmentExpression" :operator "=" :left left :right right})
+  {:type :AssignmentExpression :operator "=" :left left :right right})
 
-(defn splice-statements
-  "Wraps `statements`, a seq of statement AST nodes, in a single BlockStatement
-  node. If any member of `statements` is itself a BlockStatement node, its body
-  will be unwrapped and \"spliced\" into the resulting block."
-  [statements]
-  {:type "BlockStatement"
-   :body (->> statements
+(defn block
+  "Wraps `nodes`, zero or more AST nodes or sequences of AST nodes, in a single
+  BlockStatement node, flattening recursive BlockStatements."
+  [& nodes]
+  {:type :BlockStatement
+   :body (->> (mapcat #(if (sequential? %) % [%]) nodes)
               (map statement)
-              (map (fn [{:keys [type] :as statement}]
-                     (if (= type "BlockStatement")
-                         (:body statement)
-                         [statement])))
-              (apply concat))})
+              (mapcat #(if (= (:type %) :BlockStatement) (:body %) [%])))})
 
 ;; specials
 
@@ -68,7 +61,7 @@
 
 (defmethod generate-special :aget [{:keys [target fields]}]
   (reduce (fn [js-ast field]
-            {:type "MemberExpression"
+            {:type :MemberExpression
              :object js-ast
              :property (generate field)
              :computed true})
@@ -82,114 +75,98 @@
 
 (defmethod generate-special :deftype [{:keys [name fields]}]
   (letfn [(assign-field [field]
-            (let [fname (identifier (escape field))]
-              (assign {:type "MemberExpression"
-                       :object {:type "ThisExpression"}
+            (let [fname (identifier (munge field))]
+              (assign {:type :MemberExpression
+                       :object {:type :ThisExpression}
                        :property fname :computed false}
                       fname)))]
     (assign (generate name)
-            {:type "FunctionExpression"
-             :params (map (comp identifier escape) fields)
-             :body {:type "BlockStatement"
-                    :body (map (comp statement assign-field) fields)}})))
+            {:type :FunctionExpression
+             :params (map (comp identifier munge) fields)
+             :body (block (map assign-field fields))})))
 
 (defmethod generate-special :do [{:keys [body]}]
-  (splice-statements (map generate body)))
+  (block (map generate body)))
 
 (defmethod generate-special :if [{:keys [env test then else]}]
   (let [base {:test (generate test)
               :consequent (statement (generate then))
               :alternate (statement (generate else))}
-        type (if (= (:context env) :expr)
-                 "ConditionalExpression"
-                 "IfStatement")]
+        type (if (= (:context env) :expr) :ConditionalExpression :IfStatement)]
     (merge base {:type type})))
 
 (defmethod generate-special :invoke [{:keys [invoked args]}]
-  {:type "CallExpression"
-   :callee {:type "MemberExpression"
+  {:type :CallExpression
+   :callee {:type :MemberExpression
             :object (generate invoked)
             :property (identifier "call")
             :computed false}
    :arguments (concat [(literal nil)] (map generate args))})
 
 (defmethod generate-special :new [{:keys [ctor args]}]
-  {:type "NewExpression"
+  {:type :NewExpression
    :callee (generate ctor)
    :arguments (map generate args)})
 
 (defmethod generate-special :throw [{:keys [env thrown]}]
-  {:type "ThrowStatement"
+  {:type :ThrowStatement
    :argument (generate thrown)})
 
 ;; fn
 
 (defn generate-fn-clause [{:keys [body params variadic?]}]
   (let [fixed-params (if variadic? (butlast params) params)
-        body (map generate body)
-        bindings
-        (if variadic?
-            [(assign (identifier (last params))
-                     {:type "CallExpression"
-                      :callee (identifier "Array.prototype.slice.call")
-                      :arguments [(identifier "arguments")
-                                  (literal (count fixed-params))]})]
-            [])]
-    {:type "FunctionExpression"
+        bindings (if variadic?
+                   [(assign (identifier (last params))
+                            {:type :CallExpression
+                             :callee (identifier "Array.prototype.slice.call")
+                             :arguments [(identifier "arguments")
+                                         (literal (count fixed-params))]})]
+                   [])]
+    {:type :FunctionExpression
      :params (map identifier fixed-params)
-     :body (splice-statements (concat bindings body))}))
+     :body (block bindings (map generate body))}))
 
 (defn generate-fn-case [[num-params {:keys [variadic?] :as clause}]]
-  {:type "SwitchCase" :test (when-not variadic? (literal num-params))
-   :consequent
-   [{:type "ReturnStatement"
-     :argument {:type "CallExpression"
-                :callee {:type "MemberExpression"
-                         :object (generate-fn-clause clause)
-                         :property (identifier "apply") :computed false}
-                :arguments [(literal nil) (identifier "arguments")]}}]})
+  {:type :SwitchCase :test (when-not variadic? (literal num-params))
+   :consequent [{:type :ReturnStatement
+                 :argument {:type :CallExpression
+                            :callee {:type :MemberExpression
+                                     :object (generate-fn-clause clause)
+                                     :property (identifier "apply") :computed false}
+                            :arguments [(literal nil) (identifier "arguments")]}}]})
 
 (defmethod generate-special :fn [{:keys [clauses]}]
   (if (= (count clauses) 1)
-      (generate-fn-clause (val (first clauses)))
-      {:type "FunctionExpression" :params []
-       :body {:type "BlockStatement"
-              :body [{:type "SwitchStatement"
-                      :discriminant (identifier "arguments.length")
-                      :cases (map generate-fn-case clauses)
-                      :lexical false}]}}))
+    (generate-fn-clause (val (first clauses)))
+    {:type :FunctionExpression :params []
+     :body (block {:type :SwitchStatement
+                   :discriminant (identifier "arguments.length")
+                   :cases (map generate-fn-case clauses)
+                   :lexical false})}))
 
 ;; let, loop, recur
 
 (defn generate-bindings
-  ([bindings] (generate-bindings bindings []))
+  ([bindings] (generate-bindings bindings #{}))
   ([bindings locals]
-    (->> bindings
-         (map (fn [[k v]]
-           (assign (identifier (escape k))
-                   (if (in? locals v)
-                       (identifier (escape v))
-                       (generate v)))))
-         (map statement))))
+    (for [[k v] bindings]
+      (assign (identifier (munge k))
+              (if (contains? locals v) (identifier (munge v)) (generate v))))))
 
 (defmethod generate-special :let [{:keys [bindings body]}]
-  (splice-statements (concat (when (seq bindings) (generate-bindings bindings))
-                             (map generate body))))
+  (block (generate-bindings bindings) (map generate body)))
 
 (defmethod generate-special :loop [{:keys [bindings body env]}]
-  (let [binding-statements
-        (when (seq bindings) (generate-bindings bindings))
-        loop-statement
-        {:type "WhileStatement" :test (literal true)
-         :body (splice-statements (concat (map generate body)
-                                          [{:type "BreakStatement"}]))}
-        base (splice-statements (concat binding-statements [loop-statement]))]
+  (let [body* (block (generate-bindings bindings)
+                     {:type :WhileStatement
+                      :test (literal true)
+                      :body (block (map generate body) {:type :BreakStatement})})]
     (if (= (:context env) :statement)
-        base
-        {:type "CallExpression"
-         :callee {:type "FunctionExpression"
-                  :body base :params []}
-         :arguments []})))
+      body*
+      {:type :CallExpression
+       :callee {:type :FunctionExpression :body body* :params []}
+       :arguments []})))
 
 (defmethod generate-special :recur [{:keys [args recur-point]}]
   (let [rebinds (vec (map first (:bindings recur-point)))
@@ -197,22 +174,21 @@
         temps (vec (take num-args (repeatedly gensym)))
         bindings (concat (map (juxt temps args) (range num-args))
                          (map (juxt rebinds temps) (range num-args)))]
-    (splice-statements (concat (generate-bindings bindings temps)
-                               [{:type "ContinueStatement"}]))))
+    (block (generate-bindings bindings (set temps)) {:type :ContinueStatement})))
 
 ;; ns
 
 (defn itself-or-empty-obj [ns-name-part]
-  {:type "LogicalExpression" :operator "||"
-   :left (identifier (escape ns-name-part))
-   :right {:type "ObjectExpression" :properties []}})
+  {:type :LogicalExpression :operator "||"
+   :left (identifier (munge ns-name-part))
+   :right {:type :ObjectExpression :properties []}})
 
 (defn define-if-undefined [ns-name-part]
-  (assign (identifier (escape ns-name-part))
+  (assign (identifier (munge ns-name-part))
           (itself-or-empty-obj ns-name-part)))
 
 (defn ns-name-parts [ns-name]
-  (let [subparts (string/split (str ns-name) #"\.")]
+  (let [subparts (str/split (str ns-name) #"\.")]
     (loop [parts [] idx 0]
       (if-let [subpart (get subparts idx)]
         (recur (conj parts (str (when (seq parts) (str (peek parts) ".")) subpart))
@@ -220,16 +196,13 @@
         parts))))
 
 (defmethod generate-special :ns [{:keys [name]}]
-  (let [name-parts (ns-name-parts name)
-        first-statement
-        {:type "VariableDeclaration" :kind "var"
-         :declarations [{:type "VariableDeclarator"
-                         :id (identifier (escape (first name-parts)))
-                         :init (itself-or-empty-obj (first name-parts))}]}]
-    {:type "BlockStatement"
-     :body (concat [first-statement]
-                   (map (comp statement define-if-undefined)
-                        (rest name-parts)))}))
+  (let [[root & more] (ns-name-parts name)]
+    {:type :BlockStatement
+     :body (block {:type :VariableDeclaration :kind "var"
+                   :declarations [{:type :VariableDeclarator
+                                   :id (identifier (munge root))
+                                   :init (itself-or-empty-obj root)}]}
+                  (map define-if-undefined more))}))
 
 ;; collections
 
@@ -237,56 +210,56 @@
 
 (defmethod generate-collection :list [{:keys [children]}]
   (if (empty? children)
-      (identifier "cljs.core.List.EMPTY")
-      {:type "CallExpression"
-       :callee (identifier "cljs.core.list")
-       :arguments (map generate children)}))
+    (identifier "cljs.core.List.EMPTY")
+    {:type :CallExpression
+     :callee (identifier "cljs.core.list")
+     :arguments (map generate children)}))
 
 (defmethod generate-collection :vector [{:keys [children]}]
   (if (empty? children)
-      (identifier "cljs.core.PersistentVector.EMPTY")
-      {:type "CallExpression"
-       :callee (identifier "cljs.core.PersistentVector.fromArray")
-       :arguments [(array (map generate children)) (literal true)]}))
+    (identifier "cljs.core.PersistentVector.EMPTY")
+    {:type :CallExpression
+     :callee (identifier "cljs.core.PersistentVector.fromArray")
+     :arguments [(array (map generate children)) (literal true)]}))
 
 (defmethod generate-collection :map [{:keys [children]}]
   (if (empty? children)
-      (identifier "cljs.core.PersistentArrayMap.EMPTY")
-      (let [pairs (map :children children)
-            ks (map first pairs)
-            vs (map second pairs)]
-        {:type "NewExpression"
-         :callee (identifier "cljs.core.PersistentArrayMap.fromArray")
-         :arguments [(array (map generate (interleave ks vs)))
-                     (literal true) (literal false)]})))
+    (identifier "cljs.core.PersistentArrayMap.EMPTY")
+    (let [pairs (map :children children)
+          ks (map first pairs)
+          vs (map second pairs)]
+      {:type :NewExpression
+       :callee (identifier "cljs.core.PersistentArrayMap.fromArray")
+       :arguments [(array (map generate (interleave ks vs)))
+                   (literal true) (literal false)]})))
 
 (defmethod generate-collection :set [{:keys [children]}]
   (if (empty? children)
-      (identifier "cljs.core.PersistentHashSet.EMPTY")
-      {:type "CallExpression"
-       :callee (identifier "cljs.core.PersistentHashSet.fromArray")
-       :arguments [(array (map generate children)) (literal true)]}))
+    (identifier "cljs.core.PersistentHashSet.EMPTY")
+    {:type :CallExpression
+     :callee (identifier "cljs.core.PersistentHashSet.fromArray")
+     :arguments [(array (map generate children)) (literal true)]}))
 
 ;; constants
 
 (defmulti generate-constant :type)
 
 (defmethod generate-constant :keyword [{:keys [form]}]
-  {:type "NewExpression"
+  {:type :NewExpression
    :callee (identifier "cljs.core.Keyword")
    :arguments (map literal [nil (name form) (name form) (hash form)])})
 
 (defmethod generate-constant :symbol [{:keys [form] {:keys [quoted?]} :env}]
-  (let [name (name form) ns (namespace form)]
+  (let [name (name form)
+        ns (namespace form)]
     (if quoted?
-        {:type "NewExpression"
-         :callee (identifier "cljs.core.Symbol")
-         :arguments (map literal
-                         [ns name (str (when ns (str ns ".")) name)
-                          (hash form) nil])}
-        (identifier (str (when (and ns (not= ns "js"))
-                           (str (escape ns) "."))
-                         (escape name))))))
+      {:type :NewExpression
+       :callee (identifier "cljs.core.Symbol")
+       :arguments (map literal
+                    [ns name (str (when ns (str ns ".")) name) (hash form) nil])}
+      (identifier
+        (str (when (and ns (not= ns "js")) (str (munge ns) "."))
+             (munge name))))))
 
 (defmethod generate-constant :default [{:keys [form]}]
   (literal form))
@@ -299,19 +272,17 @@
   "Given an AST node `ast`, returns an equivalent JavaScript AST compatible
   with the SpiderMonkey Parser API (and, thus, Escodegen)."
   [{:keys [op] {:keys [context]} :env :as ast}]
-  (let [js-ast (condp = op
+  (let [js-ast (case op
                  :const (generate-constant ast)
                  :coll (generate-collection ast)
                  (generate-special ast))]
     (if (and (= context :return) (not (block? op)))
-        {:type "ReturnStatement" :argument js-ast}
-        js-ast)))
+      {:type :ReturnStatement :argument js-ast}
+      js-ast)))
 
 (defn emit-all [asts]
-  (let [top-level-js-ast
-        (-> (splice-statements (map generate asts))
-            (assoc :type "Program"))]
-    (.generate escodegen (clj->js top-level-js-ast))))
+  (.generate escodegen
+    (-> (map generate asts) block (assoc :type :Program) clj->js)))
 
 (defn emit [ast]
   (.generate escodegen (clj->js (generate ast))))
