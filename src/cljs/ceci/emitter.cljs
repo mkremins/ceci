@@ -197,12 +197,11 @@
 
 (defmethod generate-special :ns [{:keys [name]}]
   (let [[root & more] (ns-name-parts name)]
-    {:type :BlockStatement
-     :body (block {:type :VariableDeclaration :kind "var"
-                   :declarations [{:type :VariableDeclarator
-                                   :id (identifier (munge root))
-                                   :init (itself-or-empty-obj root)}]}
-                  (map define-if-undefined more))}))
+    (block {:type :VariableDeclaration :kind "var"
+            :declarations [{:type :VariableDeclarator
+                            :id (identifier (munge root))
+                            :init (itself-or-empty-obj root)}]}
+           (map define-if-undefined more))))
 
 ;; collections
 
