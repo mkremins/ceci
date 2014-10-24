@@ -17,8 +17,8 @@
    [lein-npm "0.4.0"]]
 
   :cljsbuild
-  {:builds [{:source-paths ["src/cljs"]
-             :compiler {:output-to "target/js/ceci.js"
-                        :output-dir "target/js/out"
+  {:builds [{:source-paths ["src"]
+             :compiler {:output-to "target/ceci.js"
+                        :output-dir "target/out"
                         :optimizations :simple
                         :target :nodejs}}]})
