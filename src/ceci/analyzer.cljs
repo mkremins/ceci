@@ -157,14 +157,16 @@
     (conj (vec (map (partial analyze body-env) (butlast exprs)))
           (analyze return-env (last exprs)))))
 
+(defmulti analyze-list (fn [_ {:keys [form]}] (first form)))
+
 ;; simple special forms
 
-(defn analyze-aget [env {[_ target & fields] :children :as ast}]
+(defmethod analyze-list 'aget [env {[_ target & fields] :children :as ast}]
   (assoc ast :op :aget
     :target (analyze (expr-env env) target)
     :fields (map (partial analyze (expr-env env)) fields)))
 
-(defn analyze-aset [env {[_ target & fields+value] :children :as ast}]
+(defmethod analyze-list 'aset [env {[_ target & fields+value] :children :as ast}]
   (let [fields (drop-last fields+value)
         value (last fields+value)]
     (assoc ast :op :aset
@@ -172,7 +174,7 @@
       :fields (map (partial analyze (expr-env env)) fields)
       :value (analyze (expr-env env) value))))
 
-(defn analyze-def [env {[_ name & [init?]] :children :as ast}]
+(defmethod analyze-list 'def [env {[_ name & [init?]] :children :as ast}]
   (let [name-node (analyze (expr-env env) name)
         name-form (:form name-node)
         init-node (analyze (expr-env env) (or init? nil-ast-node))]
@@ -181,34 +183,34 @@
     (swap! analyzed-defs assoc name-form init-node)
     (assoc ast :op :def :name name-node :init init-node)))
 
-(defn analyze-deftype [env {[_ name fields & specs] :children :as ast}]
+(defmethod analyze-list 'deftype* [env {[_ name fields & specs] :children :as ast}]
   (assoc ast :op :deftype
     :name (analyze (expr-env env) name)
     :fields (map :form (:children fields))))
 
-(defn analyze-do [env {[_ & body] :children :as ast}]
+(defmethod analyze-list 'do [env {[_ & body] :children :as ast}]
   (assoc ast :op :do
     :body (analyze-block env body)))
 
-(defn analyze-if [env {[_ test then else] :children :as ast}]
+(defmethod analyze-list 'if [env {[_ test then else] :children :as ast}]
   (assoc ast :op :if
     :test (analyze (expr-env env) test)
     :then (analyze env then)
     :else (analyze env else)))
 
-(defn analyze-new [env {[_ ctor & args] :children :as ast}]
+(defmethod analyze-list 'new [env {[_ ctor & args] :children :as ast}]
   (assoc ast :op :new
     :ctor (analyze (expr-env env) ctor)
     :args (map (partial analyze (expr-env env)) args)))
 
-(defn analyze-ns [env {[_ ns-name] :children :as ast}]
+(defmethod analyze-list 'ns [env {[_ ns-name] :children :as ast}]
   (enter-ns! (:form ast))
   (assoc ast :op :ns :name (:form ns-name)))
 
-(defn analyze-quote [env {[_ ast] :children}]
+(defmethod analyze-list 'quote [env {[_ ast] :children}]
   (analyze (assoc env :quoted? true) ast))
 
-(defn analyze-throw [env {[_ thrown] :children :as ast}]
+(defmethod analyze-list 'throw [env {[_ thrown] :children :as ast}]
   (assoc ast :op :throw
     :thrown (analyze (expr-env env) thrown)))
 
@@ -243,7 +245,7 @@
   [{[_ & args] :children :as ast}]
   (condp = (:type (first args))
     :symbol (let [args (rest args)]
-              (condp = (:type (first args))
+              (case (:type (first args))
                 :vector [(cons (first args) (rest args))]
                 :list (map :children args)
                 (raise "invalid function definition" (:form ast))))
@@ -251,7 +253,7 @@
     :list (map :children args)
     (raise "invalid function definition" (:form ast))))
 
-(defn analyze-fn [env ast]
+(defmethod analyze-list 'fn* [env ast]
   (assoc ast :op :fn
     :clauses (analyze-clauses env (extract-clauses ast))))
 
@@ -274,7 +276,7 @@
                  (inc idx)))
       [env analyzed])))
 
-(defn analyze-let [env {[_ bindings & body] :children :as ast}]
+(defmethod analyze-list 'let* [env {[_ bindings & body] :children :as ast}]
   (let [[body-env bindings] (analyze-bindings env (compile-bindings bindings))]
     (assoc ast :op :let
       :bindings bindings
@@ -282,13 +284,13 @@
 
 ;; loop and recur forms
 
-(defn analyze-loop [env {[_ bindings & body] :children :as ast}]
+(defmethod analyze-list 'loop* [env {[_ bindings & body] :children :as ast}]
   (let [[body-env bindings] (analyze-bindings env (compile-bindings bindings))
         ast (assoc ast :op :loop :bindings bindings)
         body-env (assoc body-env :recur-point ast)]
     (assoc ast :body (analyze-block body-env body))))
 
-(defn analyze-recur [env {[_ & args] :children :as ast}]
+(defmethod analyze-list 'recur [env {[_ & args] :children :as ast}]
   (let [recur-point (:recur-point env)]
     (if recur-point
         (assoc ast :op :recur
@@ -301,30 +303,12 @@
 (defn analyze-coll [env ast]
   (update ast :children #(map (partial analyze (expr-env env)) %)))
 
-(def specials
-  {'aget analyze-aget
-   'aset analyze-aset
-   'def analyze-def
-   'deftype* analyze-deftype
-   'do analyze-do
-   'fn* analyze-fn
-   'if analyze-if
-   'let* analyze-let
-   'loop* analyze-loop
-   'new analyze-new
-   'ns analyze-ns
-   'quote analyze-quote
-   'recur analyze-recur
-   'throw analyze-throw})
-
-(defn analyze-list [env {:keys [form children] :as ast}]
+(defmethod analyze-list :default [env {:keys [form children] :as ast}]
   (if (or (:quoted? env) (empty? children))
-      (analyze-coll env ast)
-      (if-let [analyze-special (specials (first form))]
-        (analyze-special env ast)
-        (assoc ast :op :invoke
-          :invoked (analyze (expr-env env) (first children))
-          :args (map (partial analyze (expr-env env)) (rest children))))))
+    (analyze-coll env ast)
+    (assoc ast :op :invoke
+      :invoked (analyze (expr-env env) (first children))
+      :args (map (partial analyze (expr-env env)) (rest children)))))
 
 (defn analyze-symbol [env {sym :form :as ast}]
   (cond (:quoted? env) ast
