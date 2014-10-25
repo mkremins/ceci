@@ -89,11 +89,10 @@
   (block (map generate body)))
 
 (defmethod generate-special :if [{:keys [env test then else]}]
-  (let [base {:test (generate test)
-              :consequent (statement (generate then))
-              :alternate (statement (generate else))}
-        type (if (= (:context env) :expr) :ConditionalExpression :IfStatement)]
-    (merge base {:type type})))
+  {:type (if (= (:context env) :expr) :ConditionalExpression :IfStatement)
+   :test (generate test)
+   :consequent (statement (generate then))
+   :alternate (statement (generate else))})
 
 (defmethod generate-special :invoke [{:keys [invoked args]}]
   {:type :CallExpression
