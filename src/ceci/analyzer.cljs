@@ -201,46 +201,41 @@
 
 ;; fn forms
 
-(defn analyze-clause-body [env exprs]
+(defn analyze-method-body [env exprs]
   (let [body-env (assoc env :context :statement)
         return-env (assoc env :context :return)]
-    (conj (vec (map (partial analyze body-env) (butlast exprs)))
+    (conj (mapv (partial analyze body-env) (butlast exprs))
           (analyze return-env (last exprs)))))
 
-(defn analyze-clauses [env clauses]
-  (loop [analyzed {} allow-variadic? true clauses clauses]
-    (if-let [[params & body] (first clauses)]
+(defn analyze-methods [env methods]
+  (loop [analyzed []
+         allow-variadic? true
+         methods methods]
+    (if-let [[params & body] (first methods)]
       (let [params (map :form (:children params))
             _ (assert (every? symbol? params))
             body-env (update env :locals concat params)
             variadic? (some #{'&} params)
-            clause {:params (vec (remove #{'&} params)) :variadic? variadic?
-                    :body (analyze-clause-body body-env body)}]
+            params* (vec (remove #{'&} params))
+            fixed-arity (count (if variadic? (butlast params*) params*))
+            method {:op :fn-method
+                    :params params*
+                    :variadic? variadic?
+                    :fixed-arity fixed-arity
+                    :body (analyze-method-body body-env body)}]
         (when (and variadic? (not allow-variadic?))
-          (raise "only one variadic clause allowed per function"))
-        (recur (assoc analyzed (count params) clause)
-               (not variadic?) (rest clauses)))
+          (raise "only one variadic method allowed per function"))
+        (recur (conj analyzed method) (not variadic?) (rest methods)))
       analyzed)))
 
-(defn extract-clauses
-  "Given `ast`, an AST node representing a `fn` special form, extracts and
-  returns a collection of clauses. Each clause is a sequence of AST nodes whose
-  first item represents the params taken by that clause and whose remaining
-  items comprise the clause body."
-  [{[_ & args] :children :as ast}]
-  (condp = (:type (first args))
-    :symbol (let [args (rest args)]
-              (case (:type (first args))
-                :vector [(cons (first args) (rest args))]
-                :list (map :children args)
-                (raise "invalid function definition" (:form ast))))
-    :vector [(cons (first args) (rest args))]
-    :list (map :children args)
-    (raise "invalid function definition" (:form ast))))
-
-(defmethod analyze-list 'fn* [env ast]
-  (assoc ast :op :fn
-    :clauses (analyze-clauses env (extract-clauses ast))))
+(defmethod analyze-list 'fn* [env {[_ & more] :children :as ast}]
+  (let [[local more] (if (= (:type (first more)) :symbol)
+                       [(first more) (rest more)] [nil more])
+        methods (if (= (:type (first more)) :vector)
+                  (list more) (map :children more))]
+    (assoc ast :op :fn
+      :local (:form local (gensym "fn_"))
+      :methods (analyze-methods env methods))))
 
 ;; let forms
 
