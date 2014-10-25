@@ -1,7 +1,7 @@
 (ns ceci.reader
   (:refer-clojure :exclude [*data-readers* read-string])
-  (:require [ceci.util :refer [mapk merge-meta metadatable?]]
-            [clojure.string :as string]
+  (:require [ceci.util :refer [mapk merge-meta metadatable? update]]
+            [clojure.string :as str]
             [clojure.walk :as walk]))
 
 (defn reader-error [msg]
@@ -18,27 +18,26 @@
      1))
 
 (defn make-reader [source]
-  {:lines (->> (string/split source #"\n")
-            (map (comp vec (partial map str)))
-            (map #(conj % "\n"))
-            (vec))
+  {:lines (->> (str/split source #"\n")
+               (mapv #(conj (mapv str %) "\n")))
    :line 0 :column 0})
 
 (defn make-nested-reader [parent-reader source]
   (let [{:keys [line line-offset column column-offset]} parent-reader]
-    (-> (make-reader source)
-        (assoc :line-offset (+ line line-offset))
-        (assoc :column-offset (+ column (when (= line 0) column-offset))))))
+    (assoc (make-reader source)
+      :line-offset (+ line line-offset)
+      :column-offset (+ column (when (= line 0) column-offset)))))
 
 ;; basic reader interface
 
 (defn advance [{:keys [lines line column] :as reader}]
   (if (get-in lines [line (inc column)])
-    (update-in reader [:column] inc)
-    (-> reader (update-in [:line] inc) (assoc :column 0))))
+    (update reader :column inc)
+    (-> reader (update :line inc) (assoc :column 0))))
 
 (defn lookahead [num-chars reader]
-  (loop [{:keys [lines line column] :as reader} reader chars-advanced 0]
+  (loop [{:keys [lines line column] :as reader} reader
+         chars-advanced 0]
     (if (= chars-advanced num-chars)
       (get-in lines [line column])
       (recur (advance reader) (inc chars-advanced)))))
@@ -57,56 +56,57 @@
 
 ;; delimited forms (list, vector, map, set)
 
-(def matching-delimiter
-  {"(" ")" "[" "]" "{" "}"})
-
 (declare read-all-forms)
 
-(defn read-delimited-forms
-  ([l-delim reader]
-    (read-delimited-forms l-delim (matching-delimiter l-delim) reader))
-  ([l-delim r-delim reader]
-    (let [original-reader (advance reader)]
-      (loop [reader reader buffer l-delim nesting-level 0]
-        (let [reader (advance reader)
-              ch (curr-ch reader)
-              buffer (str buffer ch)]
-          (condp = ch
-            l-delim (recur reader buffer (inc nesting-level))
-            r-delim
+(defn read-between [opener closer reader]
+  (let [original-reader (advance reader)]
+    (loop [reader reader
+           buffer opener
+           nesting-level 0]
+      (let [reader (advance reader)
+            ch (curr-ch reader)
+            buffer (str buffer ch)]
+        (condp = ch
+          opener
+            (recur reader buffer (inc nesting-level))
+          closer
             (if (= nesting-level 0)
-                (let [code (->> buffer (drop 1) (drop-last) (string/join))]
-                  [(advance reader)
-                   (read-all-forms (make-nested-reader original-reader code))])
-                (recur reader buffer (dec nesting-level)))
-            nil (reader-error (str "unmatched delimiter " l-delim))
-            (recur reader buffer nesting-level)))))))
+              (let [code (->> buffer rest drop-last str/join)]
+                [(advance reader)
+                 (read-all-forms (make-nested-reader original-reader code))])
+              (recur reader buffer (dec nesting-level)))
+          nil
+            (reader-error (str "unmatched delimiter " opener))
+          ;else
+            (recur reader buffer nesting-level))))))
 
 (defn read-list [reader]
-  (let [[reader children] (read-delimited-forms "(" reader)]
+  (let [[reader children] (read-between "(" ")" reader)]
     [reader (apply list children)]))
 
 (defn read-vector [reader]
-  (let [[reader children] (read-delimited-forms "[" reader)]
+  (let [[reader children] (read-between "[" "]" reader)]
     [reader (vec children)]))
 
 (defn read-map [reader]
-  (let [[reader children] (read-delimited-forms "{" reader)]
+  (let [[reader children] (read-between "{" "}" reader)]
     [reader (apply hash-map children)]))
 
 (defn read-set [reader]
-  (let [[reader children] (read-delimited-forms "{" reader)]
+  (let [[reader children] (read-between "{" "}" reader)]
     [reader (set children)]))
 
 ;; string and regex forms
 
 (defn read-string [reader]
-  (loop [reader reader buffer "" escape-next false]
+  (loop [reader reader
+         buffer ""
+         escape-next false]
     (let [reader (advance reader)
           ch (curr-ch reader)]
       (if escape-next
         (recur reader (str buffer ch) false)
-        (condp = ch
+        (case ch
           "\"" [(advance reader) buffer]
           "\\" (recur reader buffer true)
           nil (reader-error "unmatched delimiter \"")
@@ -136,14 +136,17 @@
       (js/Number s))))
 
 (defn parse-ratio [s]
-  (when-let [[numerator denominator] (string/split s #"/")]
-    (let [numerator (parse-int numerator)
-          denominator (parse-int denominator)]
-      (when (and numerator denominator)
-        (float (/ numerator denominator))))))
+  (let [[numerator denominator] (map parse-int (str/split s #"/" 2))]
+    (when (and numerator denominator)
+      (float (/ numerator denominator)))))
 
 (defn parse-symbol [s]
-  (case s "true" true "false" false "nil" nil (symbol s)))
+  (case s
+    "true" true
+    "false" false
+    "nil" nil
+    (let [[ns-part name-part] (str/split s #"/" 2)]
+      (if name-part (symbol ns-part name-part) (symbol ns-part)))))
 
 (defn read-symbol-or-number [reader]
   (let [[reader buffer] (read-token reader)]
@@ -155,19 +158,16 @@
 ;; anonymous functions
 
 (defn find-anon-fn-args [form]
-  (->> form
-       (tree-seq coll? identity)
+  (->> (tree-seq coll? identity form)
        (filter #(and (symbol? %) (= (first (str %)) "%")))
-       (distinct)))
+       distinct))
 
 (defn expand-anon-fn-arg [form]
   (let [arg-name (subs (str form) 1)
         arg-name (if (= arg-name "") "1" arg-name)]
     (when-not (or (parse-int arg-name) (= arg-name "&"))
       (reader-error (str "invalid anonymous function argument form " form)))
-    (gensym (if (= arg-name "&")
-                "rest__"
-                (str "p" arg-name "__")))))
+    (gensym (if (= arg-name "&") "rest__" (str "p" arg-name "__")))))
 
 (defn make-anon-fn-params [args-map]
   (let [params (->> args-map
@@ -180,16 +180,19 @@
         params (if rest-param (dissoc params Infinity) params)
         last-idx (apply max (keys params))]
     (if (nil? last-idx)
-        (if rest-param ['& rest-param] [])
-        (loop [params-form [] idx 0]
-          (let [param (get params idx)]
-            (cond (= idx last-idx)
-                  (let [params-form (conj params-form param)]
-                    (if rest-param
-                        (-> params-form (conj '&) (conj rest-param))
-                        params-form))
-                  param (recur (conj params-form param) (inc idx))
-                  :else (recur (conj params-form '_) (inc idx))))))))
+      (if rest-param ['& rest-param] [])
+      (loop [params-form [] idx 0]
+        (let [param (get params idx)]
+          (cond
+            (= idx last-idx)
+              (let [params-form (conj params-form param)]
+                (if rest-param
+                  (-> params-form (conj '&) (conj rest-param))
+                  params-form))
+            param
+              (recur (conj params-form param) (inc idx))
+            :else
+              (recur (conj params-form '_) (inc idx))))))))
 
 (defn read-anon-fn [reader]
   (let [[reader list-form] (read-list reader)
@@ -231,7 +234,7 @@
 (defn read-var [reader]
   (let [[reader form] (read-next-form (advance reader))]
     (when-not (symbol? form)
-              (reader-error "can only use var syntax #' with a symbol"))
+      (reader-error "can only use var syntax #' with a symbol"))
     [reader (list 'var form)]))
 
 ;; tagged literals
@@ -255,13 +258,13 @@
                        :else (reader-error "invalid metadata shorthand"))
         [reader form] (read-next-form reader)]
     (when-not (metadatable? form)
-              (reader-error "only symbols and collections support metadata"))
+      (reader-error "only symbols and collections support metadata"))
     [reader (vary-meta form merge metadata)]))
 
 ;; generic interface
 
 (defn read-dispatch [reader]
-  (condp = (curr-ch reader)
+  (case (curr-ch reader)
     "(" (read-anon-fn reader)
     "{" (read-set reader)
     "\"" (read-regex reader)
@@ -273,7 +276,7 @@
   (when-let [ch (curr-ch reader)]
     (if (whitespace? ch)
       (read-whitespace reader)
-      (condp = ch
+      (case ch
         "(" (read-list reader)
         "[" (read-vector reader)
         "{" (read-map reader)
@@ -296,13 +299,13 @@
         line (line-num reader)
         column (col-num reader)]
     (when-let [[reader form] (read-next-form reader)]
-              [reader (merge-meta form {:line line :column column})])))
+      [reader (merge-meta form {:line line :column column})])))
 
 (defn read-all-forms [reader]
   (loop [reader reader forms []]
     (if-let [[reader form] (read-with-source-info reader)]
-            (recur reader (conj forms form))
-            forms)))
+      (recur reader (conj forms form))
+      forms)))
 
 (defn read-code [source]
   (read-all-forms (make-reader source)))
