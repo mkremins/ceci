@@ -141,7 +141,7 @@
   (let [body-env (assoc env :context :statement)
         return-env (assoc env :context (if (= (:context env) :statement)
                                            :statement :return))]
-    (conj (vec (map (partial analyze body-env) (butlast exprs)))
+    (conj (mapv (partial analyze body-env) (butlast exprs))
           (analyze return-env (last exprs)))))
 
 (defmulti analyze-list (fn [_ {:keys [form]}] (first form)))
@@ -201,41 +201,32 @@
 
 ;; fn forms
 
-(defn analyze-method-body [env exprs]
-  (let [body-env (assoc env :context :statement)
-        return-env (assoc env :context :return)]
-    (conj (mapv (partial analyze body-env) (butlast exprs))
-          (analyze return-env (last exprs)))))
-
-(defn analyze-methods [env methods]
-  (loop [analyzed []
-         allow-variadic? true
-         methods methods]
-    (if-let [[params & body] (first methods)]
-      (let [params (map :form (:children params))
-            _ (assert (every? symbol? params))
-            body-env (update env :locals concat params)
-            variadic? (some #{'&} params)
-            params* (vec (remove #{'&} params))
-            fixed-arity (count (if variadic? (butlast params*) params*))
-            method {:op :fn-method
-                    :params params*
-                    :variadic? variadic?
-                    :fixed-arity fixed-arity
-                    :body (analyze-method-body body-env body)}]
-        (when (and variadic? (not allow-variadic?))
-          (raise "only one variadic method allowed per function"))
-        (recur (conj analyzed method) (not variadic?) (rest methods)))
-      analyzed)))
+(defn analyze-method [env [params & body]]
+  (let [params (map :form (:children params))
+        _ (assert (every? symbol? params))
+        variadic? (some #{'&} params)
+        params (vec (remove #{'&} params))
+        env (-> env (update :locals concat params) (assoc :context :return))]
+    {:op :fn-method
+     :params params
+     :variadic? variadic?
+     :fixed-arity (count (if variadic? (butlast params) params))
+     :body (analyze-block env body)}))
 
 (defmethod analyze-list 'fn* [env {[_ & more] :children :as ast}]
   (let [[local more] (if (= (:type (first more)) :symbol)
                        [(first more) (rest more)] [nil more])
-        methods (if (= (:type (first more)) :vector)
-                  (list more) (map :children more))]
+        methods (map (partial analyze-method env)
+                     (if (= (:type (first more)) :vector)
+                       (list more) (map :children more)))
+        num-variadic-methods (count (filter :variadic? methods))]
+    (when (> num-variadic-methods 1)
+      (raise "only one variadic method allowed per function"))
     (assoc ast :op :fn
       :local (:form local (gensym "fn_"))
-      :methods (analyze-methods env methods))))
+      :max-fixed-arity (apply max (map :fixed-arity methods))
+      :methods methods
+      :variadic? (> num-variadic-methods 0))))
 
 ;; let forms
 
