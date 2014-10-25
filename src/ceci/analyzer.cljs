@@ -10,24 +10,19 @@
 (def ns-name (atom nil))
 
 (defn require-ns
-  "Adds a dependency on the namespace `required-ns` to `ns-spec`. If `ns-alias`
-  is provided, `required-ns` will be aliased to `ns-alias`; otherwise, it will
-  be required under its own fully qualified name."
-  ([ns-spec required-ns]
-    (require-ns ns-spec required-ns required-ns))
-  ([ns-spec required-ns ns-alias]
-    (update ns-spec :required merge {ns-alias required-ns})))
+  "Adds a dependency on the `required` namespace to `ns-spec`. If `alias` is
+  provided, `required` will be aliased to `alias`; otherwise, it will be
+  required under its own fully qualified name."
+  ([ns-spec required]
+    (require-ns ns-spec required nil))
+  ([ns-spec required alias]
+    (update ns-spec :required merge {(or alias required) required})))
 
 (defn refer-symbols
-  "Within `ns-spec`, refers all symbols in `referred-symbols` to the symbols
-  with the same names defined in `required-ns`."
-  [ns-spec required-ns referred-symbols]
-  (if referred-symbols
-      (update ns-spec :referred merge
-              (->> referred-symbols
-                   (map (juxt identity (constantly required-ns)))
-                   (into {})))
-      ns-spec))
+  "Within `ns-spec`, refers all symbols in `referred` to the symbols with the
+  same names defined in the `required` namespace."
+  [ns-spec required referred]
+  (update ns-spec :referred merge (into {} (map #(-> [% required]) referred))))
 
 (def core-defs
   '[+ - * / = > >= < <= and apply assoc assoc-in atom boolean comp concat conj
@@ -41,21 +36,21 @@
   "Given a namespace specification `ns-spec` and a :require form from a
   namespace declaration, parses the :require form and returns a modified copy
   of `ns-spec` with the appropriate dependency information added."
-  [ns-spec [clause-type & libspecs]]
-  (if (not= clause-type :require)
-      ns-spec ; ignore clauses that aren't of form (:require ...)
-      (reduce (fn [ns-spec libspec]
-                (cond (symbol? libspec) (require-ns ns-spec libspec)
-                      (vector? libspec)
-                      (let [required-ns (first libspec)
-                            {referred-syms :refer ns-alias :as
-                             :or {referred-syms [] ns-alias required-ns}}
-                            (apply hash-map (rest libspec))]
-                        (-> ns-spec
-                            (require-ns required-ns ns-alias)
-                            (refer-symbols required-ns referred-syms)))
-                      :else (raise "invalid libspec" libspec)))
-              ns-spec libspecs)))
+  [ns-spec [clause-type & libspecs :as form]]
+  (when-not (= clause-type :require)
+    (raise "only :require forms permitted in namespace declaration" form))
+  (reduce (fn [ns-spec libspec]
+            (cond
+              (symbol? libspec)
+                (require-ns ns-spec libspec)
+              (vector? libspec)
+                (let [[required & {referred :refer alias :as}] libspec]
+                  (-> ns-spec
+                      (require-ns required alias)
+                      (refer-symbols required referred)))
+              :else
+                (raise "invalid libspec" libspec)))
+          ns-spec libspecs))
 
 (defn parse-ns-decl
   "Given a namespace declaration form, parses it and returns a valid namespace
