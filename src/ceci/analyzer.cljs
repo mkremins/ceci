@@ -170,8 +170,6 @@
   (let [name-node (analyze (expr-env env) name)
         name-form (:form name-node)
         init-node (analyze (expr-env env) (or init? (form->ast nil)))]
-    (when (contains? @analyzed-defs name-form)
-      (raise "illegal redefinition of an already-defined symbol" (:form ast)))
     (swap! analyzed-defs assoc name-form init-node)
     (assoc ast :op :def :name name-node :init init-node)))
 
