@@ -114,7 +114,8 @@
 ;; AST creation
 
 (defn node-type [form]
-  (cond (keyword? form) :keyword
+  (cond (or (true? form) (false? form)) :boolean
+        (keyword? form) :keyword
         (or (list? form) (seq? form)) :list
         (map? form) :map
         (nil? form) :nil
@@ -131,15 +132,6 @@
     (if (coll? form)
         (assoc ast :op :coll :children (map form->ast form))
         (assoc ast :op :const))))
-
-(def true-ast-node
-  {:op :const :type :bool :form true})
-
-(def false-ast-node
-  {:op :const :type :bool :form false})
-
-(def nil-ast-node
-  {:op :const :type :nil :form nil})
 
 ;; AST analysis
 
@@ -177,7 +169,7 @@
 (defmethod analyze-list 'def [env {[_ name & [init?]] :children :as ast}]
   (let [name-node (analyze (expr-env env) name)
         name-form (:form name-node)
-        init-node (analyze (expr-env env) (or init? nil-ast-node))]
+        init-node (analyze (expr-env env) (or init? (form->ast nil)))]
     (when (contains? @analyzed-defs name-form)
       (raise "illegal redefinition of an already-defined symbol" (:form ast)))
     (swap! analyzed-defs assoc name-form init-node)
@@ -312,9 +304,6 @@
 
 (defn analyze-symbol [env {sym :form :as ast}]
   (cond (:quoted? env) ast
-        (= sym (symbol "true")) true-ast-node
-        (= sym (symbol "false")) false-ast-node
-        (= sym (symbol "nil")) nil-ast-node
         ((set (:locals env)) sym) ast
         :else (assoc ast :form (resolve sym))))
 

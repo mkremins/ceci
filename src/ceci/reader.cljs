@@ -143,7 +143,7 @@
         (float (/ numerator denominator))))))
 
 (defn parse-symbol [s]
-  (symbol s))
+  (case s "true" true "false" false "nil" nil (symbol s)))
 
 (defn read-symbol-or-number [reader]
   (let [[reader buffer] (read-token reader)]
