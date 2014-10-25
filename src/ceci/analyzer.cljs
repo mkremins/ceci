@@ -1,7 +1,7 @@
 (ns ceci.analyzer
   (:refer-clojure :exclude [ns-name resolve])
   (:require [ceci.emitter :as emitter]
-            [ceci.util :refer [in? raise update]]
+            [ceci.util :refer [raise update]]
             [clojure.string :as string]))
 
 ;; namespace management
@@ -226,7 +226,7 @@
       (let [params (map :form (:children params))
             _ (assert (every? symbol? params))
             body-env (update env :locals concat params)
-            variadic? (in? params '&)
+            variadic? (some #{'&} params)
             clause {:params (vec (remove #{'&} params)) :variadic? variadic?
                     :body (analyze-clause-body body-env body)}]
         (when (and variadic? (not allow-variadic?))
