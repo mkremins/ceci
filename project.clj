@@ -1,6 +1,6 @@
-(defproject ceci "0.1.0-SNAPSHOT"
+(defproject ceci "0.0-SNAPSHOT"
   :description "Self-hosting ClojureScript compiler"
-  :url "http://github.com/mkremins/ceci"
+  :url "https://github.com/mkremins/ceci"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"
             :distribution :repo}
