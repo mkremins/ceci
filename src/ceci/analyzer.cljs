@@ -125,8 +125,8 @@
   (let [type (node-type form)
         ast {:form form :meta (meta form) :type type}]
     (if (coll? form)
-        (assoc ast :op :coll :children (map form->ast form))
-        (assoc ast :op :const))))
+      (assoc ast :op :coll :children (map form->ast form))
+      (assoc ast :op :const))))
 
 ;; AST analysis
 
@@ -230,25 +230,21 @@
 
 ;; let forms
 
-(defn compile-bindings [bindings]
-  (if (= (:type bindings) :vector)
-    (let [pairs (partition 2 (:children bindings))]
-      (if (= (count (last pairs)) 2)
-        (vec (map (juxt (comp :form first) second) pairs))
-        (raise "number of forms in bindings vector must be even" bindings)))
-    (raise "bindings form must be vector" bindings)))
-
-(defn analyze-bindings [env bindings]
-  (loop [env env analyzed [] idx 0]
-    (if-let [[bform bound] (get bindings idx)]
-      (do (assert (symbol? bform))
-          (recur (update env :locals conj bform)
-                 (conj analyzed [bform (analyze (expr-env env) bound)])
-                 (inc idx)))
-      [env analyzed])))
+(defn analyze-bindings [env {:keys [children] :as bindings}]
+  (assert (= (:type bindings) :vector))
+  (assert (even? (count children)))
+  (loop [body-env env
+         analyzed []
+         pairs (for [[k v] (partition 2 children)] [(:form k) v])]
+    (if-let [[bsym bval] (first pairs)]
+      (do (assert (symbol? bsym))
+          (recur (update body-env :locals conj bsym)
+                 (conj analyzed [bsym (analyze (expr-env body-env) bval)])
+                 (rest pairs)))
+      [body-env analyzed])))
 
 (defmethod analyze-list 'let* [env {[_ bindings & body] :children :as ast}]
-  (let [[body-env bindings] (analyze-bindings env (compile-bindings bindings))]
+  (let [[body-env bindings] (analyze-bindings env bindings)]
     (assoc ast :op :let
       :bindings bindings
       :body (analyze-block body-env body))))
@@ -256,18 +252,17 @@
 ;; loop and recur forms
 
 (defmethod analyze-list 'loop* [env {[_ bindings & body] :children :as ast}]
-  (let [[body-env bindings] (analyze-bindings env (compile-bindings bindings))
+  (let [[body-env bindings] (analyze-bindings env bindings)
         ast (assoc ast :op :loop :bindings bindings)
         body-env (assoc body-env :recur-point ast)]
     (assoc ast :body (analyze-block body-env body))))
 
 (defmethod analyze-list 'recur [env {[_ & args] :children :as ast}]
-  (let [recur-point (:recur-point env)]
-    (if recur-point
-        (assoc ast :op :recur
-          :recur-point recur-point
-          :args (vec (map (partial analyze (expr-env env)) args)))
-        (raise "can't recur here – no enclosing loop" (:form ast)))))
+  (if-let [recur-point (:recur-point env)]
+    (assoc ast :op :recur
+      :recur-point recur-point
+      :args (mapv (partial analyze (expr-env env)) args))
+    (raise "can't recur here – no enclosing loop" (:form ast))))
 
 ;; generic interface
 
