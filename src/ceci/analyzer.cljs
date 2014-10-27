@@ -7,7 +7,7 @@
 ;; namespace management
 
 (def namespaces (atom {}))
-(def ns-name (atom nil))
+(def current-ns (atom nil))
 
 (defn require-ns
   "Adds a dependency on the `required` namespace to `ns-spec`. If `alias` is
@@ -16,7 +16,7 @@
   ([ns-spec required]
     (require-ns ns-spec required nil))
   ([ns-spec required alias]
-    (update ns-spec :required merge {(or alias required) required})))
+    (update ns-spec :aliases merge {(or alias required) required})))
 
 (defn refer-symbols
   "Within `ns-spec`, refers all symbols in `referred` to the symbols with the
@@ -57,7 +57,7 @@
   specification – a map containing keys :name, :required and :referred, where:
 
      :name => a symbol that gives the namespace's fully qualified name
-     :required => a map from local namespace aliases to required namespaces'
+     :aliases => a map from local namespace aliases to required namespaces'
        fully qualified names
      :referred => a map from locally referred symbols to their defining
        namespaces' fully qualified names
@@ -75,36 +75,34 @@
   [ns-decl]
   (let [{:keys [name] :as ns-spec} (parse-ns-decl ns-decl)]
     (swap! namespaces assoc name ns-spec)
-    (reset! ns-name name)
+    (reset! current-ns name)
     ns-spec))
 
 (enter-ns! '(ns user))
 
 ;; symbol expansion
 
-(defn resolve-ns-alias [ns-alias ns-spec]
-  (when ns-alias (get-in ns-spec [:required (symbol ns-alias)])))
-
-(defn resolve-defining-ns [sym-name ns-spec]
-  (get-in ns-spec [:referred (symbol sym-name)]))
-
-(defn namespace-named [ns-name]
-  (get @namespaces (symbol ns-name)))
+(defn resolve-ns [ns-name]
+  (let [current-ns @current-ns
+        namespaces @namespaces]
+    (or (namespaces ns-name)
+        (when-let [ns-name* (get-in namespaces [current-ns :aliases ns-name])]
+          (namespaces ns-name*)))))
 
 (defn resolve
   "Given a potentially unqualified or only partly qualified symbol `sym`,
   returns the fully qualified version of that symbol in the context of
   namespace specification `ns-spec` (defaulting to the current working
   namespace specification if none is specified)."
-  ([sym] (resolve sym (namespace-named @ns-name)))
+  ([sym] (resolve sym (resolve-ns @current-ns)))
   ([sym ns-spec]
     (let [ns   (namespace sym)
           name (name sym)
-          ns   (or (resolve-ns-alias ns ns-spec)
-                   (when (or (namespace-named ns) (= ns "js")) ns)
-                   (resolve-defining-ns name ns-spec)
-                   (str @ns-name))]
-      (symbol ns name))))
+          ns*  (cond
+                 (= ns "js") ns
+                 ns (:name (resolve-ns (symbol ns)))
+                 :else ((:referred ns-spec) (symbol name) (:name ns-spec)))]
+      (symbol (str ns*) name))))
 
 ;; AST creation
 
