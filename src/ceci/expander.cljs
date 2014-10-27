@@ -27,13 +27,13 @@
   "Assumes `form` is a list form. If `(first form)` ends with a period,
   desugars `form` to the canonical constructor-invoke syntax `(new ctor args)`
   and returns the result. Otherwise, returns `form`."
-  [form]
-  (let [ctor-name (str (first form))]
-    (if (= (last ctor-name) ".")
-        (apply list 'new
-               (symbol (subs ctor-name 0 (dec (count ctor-name))))
-               (rest form))
-        form)))
+  [[ctor & args :as form]]
+  (let [name (name ctor)
+        ns   (namespace ctor)]
+    (if (= (last name) ".")
+      (let [name* (subs name 0 (dec (count name)))]
+        (apply list 'new (if ns (symbol ns name*) (symbol name*)) args))
+      form)))
 
 (defn desugar-field-access
   "Assumes `form` is a list form. If `(first form)` starts with a period
