@@ -254,8 +254,9 @@
        :arguments (map literal
                     [ns name (str (when ns (str ns ".")) name) (hash form) nil])}
       (identifier
-        (str (when (and ns (not= ns "js")) (str (munge ns) "."))
-             (munge name))))))
+        (if (= ns "js")
+          name
+          (str (when ns (str (munge ns) ".")) (munge name)))))))
 
 (defmethod generate-constant :default [{:keys [form]}]
   (literal form))
