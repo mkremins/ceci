@@ -8,7 +8,7 @@
 
 (def state
   (atom {:current-ns nil
-         :macros {'syntax-quote expander/syntax-quote}
+         :macros {'cljs.core/syntax-quote expander/syntax-quote}
          :namespaces {}}))
 
 (defn require-ns
@@ -28,11 +28,12 @@
 
 (def core-defs
   '[+ - * / = > >= < <= and apply assoc assoc-in atom boolean comp concat conj
-    cons constantly dec dissoc empty? filter first fnil gensym get get-in hash
-    hash-map identity inc interleave interpose into juxt key keys keyword
-    keyword? list list? map map? merge nil? not not= number? or partial
+    cons constantly dec defmacro dissoc empty? filter first fnil gensym get
+    get-in hash hash-map identity inc interleave interpose into juxt key keys
+    keyword keyword? list list? map map? merge nil? not not= number? or partial
     partition print println pr prn pr-str reduce remove reset! rest reverse
-    second seq seq? set set? str swap! update-in val vals vec vector vector?])
+    second seq seq? set set? str syntax-quote swap! update-in val vals vec
+    vector vector?])
 
 (defn add-clause
   "Given a namespace specification `ns-spec` and a :require form from a
@@ -287,20 +288,20 @@
             :else ast))))
 
 (defn expand [form]
-  (expander/expand-all form (:macros @state)))
+  (expander/expand-all form (comp (:macros @state) resolve)))
 
 (defn analyze! [form]
   (-> form expand form->ast analyze))
 
 ;; macros
 
-(swap! state update :macros assoc 'defmacro
-  (fn [name & args]
+(swap! state update :macros assoc 'cljs.core/defmacro
+  (fn [sym & args]
     (let [fn-form (expand (cons 'fn* args))
           compiled (->> (form->ast fn-form)
                         (analyze {:context :expr :locals [] :quoted? false})
                         emitter/emit)
-          compiled (str "(" compiled ")") ;; make function expr eval-compatible
-          macro (js/eval compiled)]
-      (swap! state update :macros assoc name macro)
-      (list 'def name fn-form))))
+          macro (js/eval (str "(" compiled ")"))
+          full-sym (symbol (name (:current-ns @state)) (name sym))]
+      (swap! state assoc-in [:macros full-sym] macro)
+      (list 'def sym fn-form))))
