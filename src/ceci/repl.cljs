@@ -2,16 +2,13 @@
   (:require [clojure.string :as str]
             [ceci.analyzer :as analyzer]
             [ceci.emitter :as emitter]
-            [ceci.expander :as expander]
             [ceci.reader :as reader]))
 
 (def readline (js/require "readline"))
 
 (defn write-js [cljs-source]
   (->> (reader/read-code cljs-source)
-       (map expander/expand-all)
-       (map analyzer/form->ast)
-       (map analyzer/analyze)
+       (map analyzer/analyze!)
        emitter/emit-all))
 
 (def banner

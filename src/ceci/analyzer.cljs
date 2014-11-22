@@ -1,11 +1,15 @@
 (ns ceci.analyzer
   (:refer-clojure :exclude [ns-name resolve])
   (:require [ceci.emitter :as emitter]
+            [ceci.expander :as expander]
             [ceci.util :refer [raise update]]))
 
 ;; namespace management
 
-(def state (atom {:current-ns nil :namespaces {}}))
+(def state
+  (atom {:current-ns nil
+         :macros {'syntax-quote expander/syntax-quote}
+         :namespaces {}}))
 
 (defn require-ns
   "Adds a dependency on the `required` namespace to `ns-spec`. If `alias` is
@@ -281,3 +285,22 @@
             (= op :coll) (analyze-coll env ast)
             (= type :symbol) (analyze-symbol env ast)
             :else ast))))
+
+(defn expand [form]
+  (expander/expand-all form (:macros @state)))
+
+(defn analyze! [form]
+  (-> form expand form->ast analyze))
+
+;; macros
+
+(swap! state update :macros assoc 'defmacro
+  (fn [name & args]
+    (let [fn-form (expand (cons 'fn* args))
+          compiled (->> (form->ast fn-form)
+                        (analyze {:context :expr :locals [] :quoted? false})
+                        emitter/emit)
+          compiled (str "(" compiled ")") ;; make function expr eval-compatible
+          macro (js/eval compiled)]
+      (swap! state update :macros assoc name macro)
+      (list 'def name fn-form))))

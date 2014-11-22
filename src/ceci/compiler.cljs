@@ -2,7 +2,6 @@
   (:require [clojure.string :as string]
             [ceci.analyzer :as analyzer]
             [ceci.emitter :as emitter]
-            [ceci.expander :as expander]
             [ceci.reader :as reader]
             [ceci.repl :as repl])
   (:refer-clojure :exclude [compile slurp spit]))
@@ -18,11 +17,8 @@
   (.writeFileSync fs fpath contents))
 
 (defn write-js [cljs-source]
-  (->> cljs-source
-       (reader/read-code)
-       (map expander/expand-all)
-       (map analyzer/form->ast)
-       (map analyzer/analyze)
+  (->> (reader/read-code cljs-source)
+       (map analyzer/analyze!)
        (emitter/emit-all)))
 
 (defn compile [in-file out-file]

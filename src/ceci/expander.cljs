@@ -1,22 +1,14 @@
 (ns ceci.expander
-  (:refer-clojure :exclude [defmacro])
-  (:require [ceci.analyzer :as ana]
-            [ceci.emitter :as emitter]
-            [ceci.util :refer [merge-meta metadatable? raise]]))
+  (:require [ceci.util :refer [merge-meta raise]]))
 
-;; macro management
-
-(def macros (atom {}))
-
-(defn install-macro! [macro-name macro]
-  (swap! macros assoc macro-name macro))
+;; macros
 
 (defn expand-macro
-  "Assumes `form` is a list form. If `(first form)` names a macro that has been
-  installed using `install-macro!`, retrieves the named macro and uses it to
-  expand `form`, returning the result. Otherwise, returns `form`."
-  [form]
-  (if-let [expander (get @macros (first form))]
+  "Assumes `form` is a list form. If `(first form)` names a macro, retrieves
+  the named macro and uses it to expand `form`, returning the result.
+  Otherwise, returns `form`."
+  [form macros]
+  (if-let [expander (macros (first form))]
     (let [metadata (meta form)]
       (merge-meta (apply expander (rest form)) metadata))
     form))
@@ -62,39 +54,40 @@
   "Expands `form` once. If `form` is a list with a registered macro's name as
   its first element, applies the corresponding macro to the remaining elements
   of `form` and returns the result; otherwise, returns `form`."
-  [form]
+  [form macros]
   (if (and (list? form) (symbol? (first form)))
-      (-> form
-          expand-macro
-          desugar-new-syntax
-          desugar-field-access
-          desugar-method-call)
-      form))
+    (-> form
+        (expand-macro macros)
+        desugar-new-syntax
+        desugar-field-access
+        desugar-method-call)
+    form))
 
 (defn expand
   "Expands `form` repeatedly (using `expand-once`) until the result no longer
   represents a macro form, then returns the result. Does not recursively expand
   any children that `form` may have; see `expand-all` if that's what you want."
-  [form]
+  [form macros]
   (loop [original form
-         expanded (expand-once form)]
+         expanded (expand-once form macros)]
     (if (= original expanded)
-        original
-        (recur expanded (expand-once expanded)))))
+      original
+      (recur expanded (expand-once expanded macros)))))
 
 (defn expand-all
-  [form]
+  [form macros]
   "Recursively expands `form` and its children, first expanding `form` itself
   using `expand`, then (if the result is a sequential form) expanding each
   child of the result using `expand-all`."
-  (let [form (expand form)
+  (let [form (expand form macros)
         metadata (meta form)
-        expanded
-        (cond (list? form) (apply list (map expand-all form))
-              (map? form) (apply hash-map (map expand-all (apply concat form)))
-              (set? form) (set (map expand-all form))
-              (vector? form) (vec (map expand-all form))
-              :else form)]
+        expand-all* #(expand-all % macros)
+        expanded (condp #(%1 %2) form
+                   map? (zipmap (map expand-all* (keys form))
+                                (map expand-all* (vals form)))
+                   (some-fn list? seq?) (map expand-all* form)
+                   coll? (into (empty form) (map expand-all* form))
+                   form)]
     (merge-meta expanded metadata)))
 
 ;; syntax-quote
@@ -114,9 +107,10 @@
   unquote-splice forms in place rather than erroring when one is encountered."
   [forms]
   (map (fn [form]
-         (cond (unquote? form) [(second form)]
-               (unquote-splice? form) (list 'vec (second form))
-               :else [(syntax-quote form)]))
+         (condp #(%1 %2) form
+           unquote? [(second form)]
+           unquote-splice? (list 'vec (second form))
+           [(syntax-quote form)]))
        forms))
 
 (defn syntax-quote
@@ -124,30 +118,14 @@
   and unquote-splice forms and propagating ordinary quotation to other internal
   forms that have not been explicitly unquoted."
   [form]
-  (cond (symbol? form) (list 'quote form)
-        (unquote? form) (second form)
-        (unquote-splice? form) (raise "invalid location for ~@" form)
-        (or (not (coll? form)) (empty? form)) form
-        (list? form) (list 'apply 'list (cons 'concat (expand-sequence form)))
-        (map? form) (list 'apply 'hash-map
-                          (cons 'concat (expand-sequence (apply concat form))))
-        (set? form) (list 'set (cons 'concat (expand-sequence form)))
-        (vector? form) (cons 'concat (expand-sequence form))
-        :else (raise "unknown collection type" form)))
-
-(install-macro! 'syntax-quote syntax-quote)
-
-;; defmacro
-
-(defn defmacro [name & args]
-  (let [fn-form (expand-all (cons 'fn* args))
-        compiled (->> fn-form
-                      ana/form->ast
-                      (ana/analyze {:context :expr :locals [] :quoted? false})
-                      emitter/emit)
-        compiled (str "(" compiled ")") ; make function expr eval-compatible
-        macro (js/eval compiled)]
-    (install-macro! name macro)
-    (list 'def name fn-form)))
-
-(install-macro! 'defmacro defmacro)
+  (condp #(%1 %2) form
+    symbol? (list 'quote form)
+    unquote? (second form)
+    unquote-splice? (raise "invalid location for ~@" form)
+    (some-fn (complement coll?) empty?) form
+    list? (list 'apply 'list (cons 'concat (expand-sequence form)))
+    map? (list 'apply 'hash-map
+                      (cons 'concat (expand-sequence (apply concat form))))
+    set? (list 'set (cons 'concat (expand-sequence form)))
+    vector? (cons 'concat (expand-sequence form))
+    (raise "unknown collection type" form)))
