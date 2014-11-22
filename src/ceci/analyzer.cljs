@@ -1,13 +1,11 @@
 (ns ceci.analyzer
   (:refer-clojure :exclude [ns-name resolve])
   (:require [ceci.emitter :as emitter]
-            [ceci.util :refer [raise update]]
-            [clojure.string :as string]))
+            [ceci.util :refer [raise update]]))
 
 ;; namespace management
 
-(def namespaces (atom {}))
-(def current-ns (atom nil))
+(def state (atom {:current-ns nil :namespaces {}}))
 
 (defn require-ns
   "Adds a dependency on the `required` namespace to `ns-spec`. If `alias` is
@@ -74,8 +72,8 @@
   the newly created namespace."
   [ns-decl]
   (let [{:keys [name] :as ns-spec} (parse-ns-decl ns-decl)]
-    (swap! namespaces assoc name ns-spec)
-    (reset! current-ns name)
+    (swap! state assoc-in [:namespaces name] ns-spec)
+    (swap! state assoc :current-ns name)
     ns-spec))
 
 (enter-ns! '(ns user))
@@ -83,8 +81,7 @@
 ;; symbol expansion
 
 (defn resolve-ns [ns-name]
-  (let [current-ns @current-ns
-        namespaces @namespaces]
+  (let [{:keys [current-ns namespaces]} @state]
     (or (namespaces ns-name)
         (when-let [ns-name* (get-in namespaces [current-ns :aliases ns-name])]
           (namespaces ns-name*)))))
@@ -94,7 +91,7 @@
   returns the fully qualified version of that symbol in the context of
   namespace specification `ns-spec` (defaulting to the current working
   namespace specification if none is specified)."
-  ([sym] (resolve sym (resolve-ns @current-ns)))
+  ([sym] (resolve sym (resolve-ns (:current-ns @state))))
   ([sym ns-spec]
     (let [ns   (namespace sym)
           name (name sym)
@@ -107,17 +104,17 @@
 ;; AST creation
 
 (defn node-type [form]
-  (cond (or (true? form) (false? form)) :boolean
-        (keyword? form) :keyword
-        (or (list? form) (seq? form)) :list
-        (map? form) :map
-        (nil? form) :nil
-        (number? form) :number
-        (set? form) :set
-        (string? form) :string
-        (symbol? form) :symbol
-        (vector? form) :vector
-        :else (raise "unrecognized form type" form)))
+  (condp #(%1 %2) form
+    (some-fn true? false?) :boolean
+    keyword? :keyword
+    (some-fn list? seq?) :list
+    map? :map
+    nil? :nil
+    number? :number
+    set? :set
+    string? :string
+    symbol? :symbol
+    vector? :vector))
 
 (defn form->ast [form]
   (let [type (node-type form)
@@ -129,8 +126,6 @@
 ;; AST analysis
 
 (declare analyze)
-
-(def analyzed-defs (atom {}))
 
 (defn expr-env [env]
   (assoc env :context :expr))
@@ -163,7 +158,6 @@
   (let [name-node (analyze (expr-env env) name)
         name-form (:form name-node)
         init-node (analyze (expr-env env) (or init? (form->ast nil)))]
-    (swap! analyzed-defs assoc name-form init-node)
     (assoc ast :op :def :name name-node :init init-node)))
 
 (defmethod analyze-list 'deftype* [env {[_ name fields & specs] :children :as ast}]
