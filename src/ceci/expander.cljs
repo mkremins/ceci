@@ -42,8 +42,7 @@
         metadata (meta form)
         expand-all* #(expand-all % macros)
         expanded (condp #(%1 %2) form
-                   map? (zipmap (map expand-all* (keys form))
-                                (map expand-all* (vals form)))
+                   map? (apply hash-map (map expand-all* (flatten1 form)))
                    (some-fn list? seq?) (map expand-all* form)
                    coll? (into (empty form) (map expand-all* form))
                    form)]
@@ -73,7 +72,7 @@
     unquote-splice? (raise "invalid location for ~@" form)
     (some-fn (complement coll?) empty?) form
     list? (expand-sequence form)
-    map? (list 'apply 'hash-map (expand-sequence (apply concat form)))
+    map? (list 'apply 'hash-map (expand-sequence (flatten1 form)))
     set? (list 'set (expand-sequence form))
     vector? (list 'vec (expand-sequence form))
     (raise "unknown collection type" form)))
