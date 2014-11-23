@@ -23,13 +23,13 @@
   (update ns-spec :referred merge (zipmap syms (repeat (str from-ns)))))
 
 (def core-defs
-  '[+ - * / = > >= < <= and apply assoc assoc-in atom boolean comp concat conj
-    cons constantly dec defmacro dissoc empty? filter first fnil gensym get
-    get-in hash hash-map identity inc interleave interpose into juxt key keys
-    keyword keyword? list list? map map? merge nil? not not= number? or partial
-    partition print println pr prn pr-str reduce remove reset! rest reverse
-    second seq seq? set set? str syntax-quote swap! update-in val vals vec
-    vector vector?])
+  '[+ - * / = > >= < <= aget and apply aset assoc assoc-in atom boolean comp
+    concat conj cons constantly dec defmacro dissoc empty? filter first fnil
+    gensym get get-in hash hash-map identity inc interleave interpose into juxt
+    key keys keyword keyword? list list? map map? merge nil? not not= number?
+    or partial partition print println pr prn pr-str reduce remove reset! rest
+    reverse second seq seq? set set? str syntax-quote swap! update-in val vals
+    vec vector vector?])
 
 (defn create-ns-spec [ns-name]
   (-> {:name ns-name}
@@ -98,19 +98,6 @@
 (defmulti analyze-list (fn [_ {:keys [form]}] (first form)))
 
 ;; simple special forms
-
-(defmethod analyze-list 'aget [env {[_ target & fields] :children :as ast}]
-  (assoc ast :op :aget
-    :target (analyze (expr-env env) target)
-    :fields (map (partial analyze (expr-env env)) fields)))
-
-(defmethod analyze-list 'aset [env {[_ target & fields+value] :children :as ast}]
-  (let [fields (drop-last fields+value)
-        value (last fields+value)]
-    (assoc ast :op :aset
-      :target (analyze (expr-env env) target)
-      :fields (map (partial analyze (expr-env env)) fields)
-      :value (analyze (expr-env env) value))))
 
 (defmethod analyze-list 'def [env {[_ name & [init?]] :children :as ast}]
   (let [name-node (analyze (expr-env env) name)

@@ -59,17 +59,6 @@
 
 (defmulti generate-special :op)
 
-(defmethod generate-special :aget [{:keys [target fields]}]
-  (reduce (fn [js-ast field]
-            {:type :MemberExpression
-             :object js-ast
-             :property (generate field)
-             :computed true})
-          (generate target) fields))
-
-(defmethod generate-special :aset [{:keys [value] :as ast}]
-  (assign (generate-special (assoc ast :op :aget)) (generate value)))
-
 (defmethod generate-special :def [{:keys [name init]}]
   (assign (generate name) (generate init)))
 

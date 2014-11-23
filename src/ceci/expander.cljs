@@ -1,72 +1,32 @@
 (ns ceci.expander
   (:require [ceci.util :refer [merge-meta raise]]))
 
-;; macros
-
-(defn expand-macro
-  "Assumes `form` is a list form. If `(first form)` names a macro, retrieves
-  the named macro and uses it to expand `form`, returning the result.
-  Otherwise, returns `form`."
-  [form macros]
-  (if-let [expander (macros (first form))]
+(defn expand-macro [form macros]
+  (if-let [macro (macros (first form))]
     (let [metadata (meta form)]
-      (merge-meta (apply expander (rest form)) metadata))
+      (merge-meta (apply macro (rest form)) metadata))
     form))
 
-;; syntax sugar
-
 (defn desugar-new-syntax
-  "Assumes `form` is a list form. If `(first form)` ends with a period,
-  desugars `form` to the canonical constructor-invoke syntax `(new ctor args)`
-  and returns the result. Otherwise, returns `form`."
+  "Desugars (Ctor. args) to (new Ctor args)."
   [[ctor & args :as form]]
-  (let [name (name ctor)
-        ns   (namespace ctor)]
-    (if (= (last name) ".")
-      (let [name* (subs name 0 (dec (count name)))]
-        (apply list 'new (if ns (symbol ns name*) (symbol name*)) args))
+  (let [cname (name ctor)]
+    (if (= (last cname) \.)
+      (let [cname (apply str (drop-last cname))
+            cns (namespace ctor)]
+        (list* 'new (if cns (symbol cns cname) (symbol cname)) args))
       form)))
-
-(defn desugar-field-access
-  "Assumes `form` is a list form. If `(first form)` starts with a period
-  followed by a dash, desugars `form` to the canonical field-access syntax
-  `(aget obj fname)` and returns the result. Otherwise, returns `form`."
-  [form]
-  (let [field (str (first form))]
-    (if (and (= (first field) ".") (= (second field) "-"))
-        (list 'aget (second form) (subs field 2))
-        form)))
-
-(defn desugar-method-call
-  "Assumes `form` is a list form. If `(first form)` starts with a period,
-  desugars `form` to the canonical method-call syntax `((aget obj mname) args)`
-  and returns the result. Otherwise, returns `form`."
-  [form]
-  (let [method (str (first form))]
-    (if (= (first method) ".")
-        (cons (list 'aget (second form) (subs method 1))
-              (drop 2 form))
-        form)))
 
 ;; public API
 
-(defn expand-once
-  "Expands `form` once. If `form` is a list with a registered macro's name as
-  its first element, applies the corresponding macro to the remaining elements
-  of `form` and returns the result; otherwise, returns `form`."
-  [form macros]
+(defn expand-once [form macros]
   (if (and (list? form) (symbol? (first form)))
-    (-> form
-        (expand-macro macros)
-        desugar-new-syntax
-        desugar-field-access
-        desugar-method-call)
+    (-> form (expand-macro macros) desugar-new-syntax)
     form))
 
 (defn expand
-  "Expands `form` repeatedly (using `expand-once`) until the result no longer
-  represents a macro form, then returns the result. Does not recursively expand
-  any children that `form` may have; see `expand-all` if that's what you want."
+  "Expands `form` repeatedly using `expand-once` until the result cannot be
+  expanded further, then returns the result."
   [form macros]
   (loop [original form
          expanded (expand-once form macros)]
@@ -76,9 +36,8 @@
 
 (defn expand-all
   [form macros]
-  "Recursively expands `form` and its children, first expanding `form` itself
-  using `expand`, then (if the result is a sequential form) expanding each
-  child of the result using `expand-all`."
+  "Walks `form` from the top down, applying `expand` to each subform, and
+  returns the result."
   (let [form (expand form macros)
         metadata (meta form)
         expand-all* #(expand-all % macros)
