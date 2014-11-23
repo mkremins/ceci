@@ -99,11 +99,21 @@
 
 ;; simple special forms
 
-(defmethod analyze-list 'def [env {[_ name & [init?]] :children :as ast}]
-  (let [name-node (analyze (expr-env env) name)
-        name-form (:form name-node)
-        init-node (analyze (expr-env env) (or init? (form->ast nil)))]
-    (assoc ast :op :def :name name-node :init init-node)))
+(defmethod analyze-list 'def [env {[_ name & [init]] :children :as ast}]
+  (let [analyze* (partial analyze (expr-env env))]
+    (assoc ast :op :def
+      :name (analyze* name)
+      :init (analyze* (or init (form->ast nil))))))
+
+(defmethod analyze-list 'defmacro [env {[_ sym & args] :form :as ast}]
+  (let [analyze* (partial analyze (expr-env env))
+        fn-ast (-> (cons 'fn* args) form->ast analyze*)
+        macro (js/eval (str "(" (emitter/emit fn-ast) ")"))
+        full-sym (symbol (:current-ns @state) (name sym))]
+    (swap! state assoc-in [:macros full-sym] macro)
+    (assoc ast :op :def
+      :name (analyze* (second (:children ast)))
+      :init fn-ast)))
 
 (defmethod analyze-list 'deftype* [env {[_ name fields & specs] :children :as ast}]
   (assoc ast :op :deftype
@@ -243,21 +253,6 @@
             (= type :symbol) (analyze-symbol env ast)
             :else ast))))
 
-(defn expand [form]
-  (expander/expand-all form (comp (:macros @state) resolve)))
-
 (defn analyze! [form]
-  (-> form expand form->ast analyze))
-
-;; macros
-
-(swap! state update :macros assoc 'cljs.core/defmacro
-  (fn [sym & args]
-    (let [fn-form (expand (cons 'fn* args))
-          compiled (->> (form->ast fn-form)
-                        (analyze {:context :expr :locals [] :quoted? false})
-                        emitter/emit)
-          macro (js/eval (str "(" compiled ")"))
-          full-sym (symbol (:current-ns @state) (name sym))]
-      (swap! state assoc-in [:macros full-sym] macro)
-      (list 'def sym fn-form))))
+  (-> form (expander/expand-all (comp (:macros @state) resolve))
+           form->ast analyze))
