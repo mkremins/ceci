@@ -4,27 +4,23 @@
             [ceci.expander :as expander]
             [ceci.util :refer [raise update]]))
 
-;; namespace management
-
 (def state
   (atom {:current-ns nil
          :macros {'cljs.core/syntax-quote expander/syntax-quote}
          :namespaces {}}))
 
+;; namespace management
+
 (defn require-ns
-  "Adds a dependency on the `required` namespace to `ns-spec`. If `alias` is
-  provided, `required` will be aliased to `alias`; otherwise, it will be
-  required under its own fully qualified name."
   ([ns-spec required]
     (require-ns ns-spec required nil))
   ([ns-spec required alias]
-    (update ns-spec :aliases merge {(or alias required) required})))
+    (let [required (str required)
+          alias (if alias (str alias) required)]
+      (update ns-spec :aliases merge {alias required}))))
 
-(defn refer-symbols
-  "Within `ns-spec`, refers all symbols in `referred` to the symbols with the
-  same names defined in the `required` namespace."
-  [ns-spec required referred]
-  (update ns-spec :referred merge (into {} (map #(-> [% required]) referred))))
+(defn refer-symbols [ns-spec from-ns syms]
+  (update ns-spec :referred merge (zipmap syms (repeat (str from-ns)))))
 
 (def core-defs
   '[+ - * / = > >= < <= and apply assoc assoc-in atom boolean comp concat conj
@@ -35,53 +31,14 @@
     second seq seq? set set? str syntax-quote swap! update-in val vals vec
     vector vector?])
 
-(defn add-clause
-  "Given a namespace specification `ns-spec` and a :require form from a
-  namespace declaration, parses the :require form and returns a modified copy
-  of `ns-spec` with the appropriate dependency information added."
-  [ns-spec [clause-type & libspecs :as form]]
-  (when-not (= clause-type :require)
-    (raise "only :require forms permitted in namespace declaration" form))
-  (reduce (fn [ns-spec libspec]
-            (cond
-              (symbol? libspec)
-                (require-ns ns-spec libspec)
-              (vector? libspec)
-                (let [[required & {referred :refer alias :as}] libspec]
-                  (-> ns-spec
-                      (require-ns required alias)
-                      (refer-symbols required referred)))
-              :else
-                (raise "invalid libspec" libspec)))
-          ns-spec libspecs))
+(defn create-ns-spec [ns-name]
+  (-> {:name ns-name}
+      (require-ns "cljs.core") (refer-symbols "cljs.core" core-defs)))
 
-(defn parse-ns-decl
-  "Given a namespace declaration form, parses it and returns a valid namespace
-  specification – a map containing keys :name, :required and :referred, where:
+(defn enter-ns [state {:keys [name] :as ns-spec}]
+  (-> state (assoc-in [:namespaces name] ns-spec) (assoc :current-ns name)))
 
-     :name => a symbol that gives the namespace's fully qualified name
-     :aliases => a map from local namespace aliases to required namespaces'
-       fully qualified names
-     :referred => a map from locally referred symbols to their defining
-       namespaces' fully qualified names
-
-  By default, all namespaces depend on `cljs.core` and refer all the symbols in
-  `core-defs` from the core namespace."
-  [[_ name & clauses]]
-  (let [ns-spec (refer-symbols {:name name} 'cljs.core core-defs)]
-    (reduce add-clause ns-spec clauses)))
-
-(defn enter-ns!
-  "Given a namespace declaration form `ns-decl`, parses it to produce a
-  namespace specification (using `parse-ns-decl`) and immediately switches into
-  the newly created namespace."
-  [ns-decl]
-  (let [{:keys [name] :as ns-spec} (parse-ns-decl ns-decl)]
-    (swap! state assoc-in [:namespaces name] ns-spec)
-    (swap! state assoc :current-ns name)
-    ns-spec))
-
-(enter-ns! '(ns user))
+(swap! state enter-ns (create-ns-spec "user"))
 
 ;; symbol expansion
 
@@ -92,19 +49,15 @@
           (namespaces ns-name*)))))
 
 (defn resolve
-  "Given a potentially unqualified or only partly qualified symbol `sym`,
-  returns the fully qualified version of that symbol in the context of
-  namespace specification `ns-spec` (defaulting to the current working
-  namespace specification if none is specified)."
+  "Returns the canonical expansion of `sym` in the context of `ns-spec`. Uses
+  the currently active namespace if no `ns-spec` is provided."
   ([sym] (resolve sym (resolve-ns (:current-ns @state))))
   ([sym ns-spec]
-    (let [ns   (namespace sym)
-          name (name sym)
-          ns*  (cond
-                 (= ns "js") ns
-                 ns (:name (resolve-ns (symbol ns)))
-                 :else ((:referred ns-spec) (symbol name) (:name ns-spec)))]
-      (symbol (str ns*) name))))
+    (if-let [sym-ns (namespace sym)]
+      (if (= sym-ns "js")
+        sym
+        (symbol (:name (resolve-ns sym-ns)) (name sym)))
+      (symbol (get (:referred ns-spec) sym (:name ns-spec)) (str sym)))))
 
 ;; AST creation
 
@@ -185,10 +138,6 @@
     :ctor (analyze (expr-env env) ctor)
     :args (map (partial analyze (expr-env env)) args)))
 
-(defmethod analyze-list 'ns [env {[_ ns-name] :children :as ast}]
-  (enter-ns! (:form ast))
-  (assoc ast :op :ns :name (:form ns-name)))
-
 (defmethod analyze-list 'quote [env {[_ ast] :children}]
   (analyze (assoc env :quoted? true) ast))
 
@@ -261,6 +210,26 @@
       :args (mapv (partial analyze (expr-env env)) args))
     (raise "can't recur here – no enclosing loop" (:form ast))))
 
+;; ns forms
+
+(defn add-libspec [ns-spec libspec]
+  (condp #(%1 %2) libspec
+    symbol? (require-ns ns-spec libspec)
+    vector? (let [[required & {alias :as, referred :refer}] libspec]
+              (-> ns-spec (require-ns required alias)
+                          (refer-symbols required referred)))
+    (raise "Only vectors and symbols may be used as libspecs." libspec)))
+
+(defn add-require-clause [ns-spec [head & libspecs :as form]]
+  (when-not (= head :require)
+    (raise "The ns macro supports only :require at this time." form))
+  (reduce add-libspec ns-spec libspecs))
+
+(defmethod analyze-list 'ns [env {[_ ns-sym & clauses] :form :as ast}]
+  (let [ns-spec (create-ns-spec (str ns-sym))]
+    (swap! state enter-ns (reduce add-require-clause ns-spec clauses)))
+  (assoc ast :op :ns :name ns-sym))
+
 ;; generic interface
 
 (defn analyze-coll [env ast]
@@ -302,6 +271,6 @@
                         (analyze {:context :expr :locals [] :quoted? false})
                         emitter/emit)
           macro (js/eval (str "(" compiled ")"))
-          full-sym (symbol (name (:current-ns @state)) (name sym))]
+          full-sym (symbol (:current-ns @state) (name sym))]
       (swap! state assoc-in [:macros full-sym] macro)
       (list 'def sym fn-form))))
