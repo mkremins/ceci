@@ -60,31 +60,20 @@
   (and (list? form) (= (first form) 'unquote-splice)))
 
 (defn expand-sequence
-  "Propagates `syntax-quote` over a collection of `forms`. Typically, `forms`
-  is actually a sequential form taken from within an outer syntax-quoted form.
-  Effectively a slight modification of `syntax-quote`'s behavior to expand
-  unquote-splice forms in place rather than erroring when one is encountered."
+  "Propagates `syntax-quote` over `forms`, expanding any `unquote-splice`s."
   [forms]
-  (map (fn [form]
-         (condp #(%1 %2) form
-           unquote? [(second form)]
-           unquote-splice? (list 'vec (second form))
-           [(syntax-quote form)]))
-       forms))
+  (cons 'concat (map #(if (unquote-splice? %)
+                        (list 'seq (second %)) [(syntax-quote %)])
+                     forms)))
 
-(defn syntax-quote
-  "Recursively expands syntax-quoted form `form`, resolving internal unquote
-  and unquote-splice forms and propagating ordinary quotation to other internal
-  forms that have not been explicitly unquoted."
-  [form]
+(defn syntax-quote [form]
   (condp #(%1 %2) form
     symbol? (list 'quote form)
     unquote? (second form)
     unquote-splice? (raise "invalid location for ~@" form)
     (some-fn (complement coll?) empty?) form
-    list? (list 'apply 'list (cons 'concat (expand-sequence form)))
-    map? (list 'apply 'hash-map
-                      (cons 'concat (expand-sequence (apply concat form))))
-    set? (list 'set (cons 'concat (expand-sequence form)))
-    vector? (cons 'concat (expand-sequence form))
+    list? (expand-sequence form)
+    map? (list 'apply 'hash-map (expand-sequence (apply concat form)))
+    set? (list 'set (expand-sequence form))
+    vector? (list 'vec (expand-sequence form))
     (raise "unknown collection type" form)))
