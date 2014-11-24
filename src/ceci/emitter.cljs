@@ -83,10 +83,10 @@
    :consequent (statement (generate then))
    :alternate (statement (generate else))})
 
-(defmethod generate-special :invoke [{:keys [invoked args]}]
+(defmethod generate-special :invoke [{:keys [args], target :fn}]
   {:type :CallExpression
    :callee {:type :MemberExpression
-            :object (generate invoked)
+            :object (generate target)
             :property (identifier "call")
             :computed false}
    :arguments (concat [(literal nil)] (map generate args))})
@@ -96,9 +96,9 @@
    :callee (generate ctor)
    :arguments (map generate args)})
 
-(defmethod generate-special :throw [{:keys [env thrown]}]
+(defmethod generate-special :throw [{:keys [env exception]}]
   {:type :ThrowStatement
-   :argument (generate thrown)})
+   :argument (generate exception)})
 
 ;; fn
 

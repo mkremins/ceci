@@ -203,9 +203,9 @@
 (defmethod analyze-list 'quote [env {[_ ast] :children}]
   (analyze (assoc env :quoted? true) ast))
 
-(defmethod analyze-list 'throw [env {[_ thrown] :children :as ast}]
+(defmethod analyze-list 'throw [env {[_ exception] :children :as ast}]
   (assoc ast :op :throw
-    :thrown (analyze (expr-env env) thrown)))
+    :exception (analyze (expr-env env) exception)))
 
 ;; fn forms
 
@@ -301,7 +301,7 @@
   (if (or (:quoted? env) (empty? children))
     (analyze-coll env ast)
     (assoc ast :op :invoke
-      :invoked (analyze (expr-env env) (first children))
+      :fn (analyze (expr-env env) (first children))
       :args (map (partial analyze (expr-env env)) (rest children)))))
 
 (defn analyze-symbol [env {sym :form :as ast}]
