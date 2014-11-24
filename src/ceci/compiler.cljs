@@ -18,8 +18,8 @@
 
 (defn write-js [cljs-source]
   (->> (reader/read-code cljs-source)
-       (map analyzer/analyze!)
-       (emitter/emit-all)))
+       (map analyzer/analyze-form)
+       emitter/emit-all))
 
 (defn compile [in-file out-file]
   (spit out-file (write-js (slurp in-file))))

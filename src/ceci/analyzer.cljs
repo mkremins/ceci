@@ -318,5 +318,5 @@
             (= type :symbol) (analyze-symbol env ast)
             :else ast))))
 
-(defn analyze! [form]
+(defn analyze-form [form]
   (-> form expand-all form->ast analyze))

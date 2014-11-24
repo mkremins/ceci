@@ -8,7 +8,7 @@
 
 (defn write-js [cljs-source]
   (->> (reader/read-code cljs-source)
-       (map analyzer/analyze!)
+       (map analyzer/analyze-form)
        emitter/emit-all))
 
 (def banner
