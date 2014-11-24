@@ -1,13 +1,9 @@
 (ns ceci.analyzer
   (:refer-clojure :exclude [ns-name resolve])
   (:require [ceci.emitter :as emitter]
-            [ceci.expander :as expander]
-            [ceci.util :refer [raise update]]))
+            [ceci.util :refer [merge-meta raise update]]))
 
-(def state
-  (atom {:current-ns nil
-         :macros {'cljs.core/syntax-quote expander/syntax-quote}
-         :namespaces {}}))
+(def state (atom {:current-ns nil :macros {} :namespaces {}}))
 
 ;; namespace management
 
@@ -58,6 +54,75 @@
         sym
         (symbol (:name (resolve-ns sym-ns)) (name sym)))
       (symbol (get (:referred ns-spec) sym (:name ns-spec)) (str sym)))))
+
+;; macroexpansion & syntax desugaring
+
+(defn expand-macro [form]
+  (if-let [macro (get-in @state [:macros (resolve (first form))])]
+    (let [metadata (meta form)]
+      (merge-meta (apply macro (rest form)) metadata))
+    form))
+
+(defn desugar-new-syntax
+  "Desugars (Ctor. args) to (new Ctor args)."
+  [[ctor & args :as form]]
+  (let [cname (name ctor)]
+    (if (= (last cname) \.)
+      (let [cname (apply str (drop-last cname))
+            cns (namespace ctor)]
+        (list* 'new (if cns (symbol cns cname) (symbol cname)) args))
+      form)))
+
+(defn expand-once [form]
+  (if (and (list? form) (symbol? (first form)))
+    (-> form expand-macro desugar-new-syntax)
+    form))
+
+(defn expand
+  "Expands `form` repeatedly using `expand-once` until the result cannot be
+  expanded further, then returns the result."
+  [form]
+  (loop [original form
+         expanded (expand-once form)]
+    (if (= original expanded)
+      original
+      (recur expanded (expand-once expanded)))))
+
+(defn expand-all
+  [form]
+  "Walks `form` from the top down, applying `expand` to each subform, and
+  returns the result."
+  (let [form (expand form)
+        metadata (meta form)
+        expanded (condp #(%1 %2) form
+                   map? (apply hash-map (map expand-all (flatten1 form)))
+                   (some-fn list? seq?) (map expand-all form)
+                   coll? (into (empty form) (map expand-all form))
+                   form)]
+    (merge-meta expanded metadata)))
+
+;; syntax-quote
+
+(defn syntax-quote [form]
+  (let [unquote? (every-pred list? (comp #{'unquote} first))
+        unquote-splicing? (every-pred list? (comp #{'unquote-splicing} first))
+        splice (fn [forms]
+                 (cons 'concat
+                   (map #(if (unquote-splicing? %)
+                           (list 'seq (second %)) [(syntax-quote %)])
+                        forms)))]
+    (condp #(%1 %2) form
+      symbol? (list 'quote form)
+      unquote? (second form)
+      unquote-splicing? (raise "Invalid location for unquote-splicing." form)
+      (some-fn (complement coll?) empty?) form
+      list? (splice form)
+      map? (list 'apply 'hash-map (splice (flatten1 form)))
+      set? (list 'set (splice form))
+      vector? (list 'vec (splice form))
+      (raise "Unsupported collection type." form))))
+
+(swap! state assoc-in [:macros 'cljs.core/syntax-quote] syntax-quote)
 
 ;; AST creation
 
@@ -254,5 +319,4 @@
             :else ast))))
 
 (defn analyze! [form]
-  (-> form (expander/expand-all (comp (:macros @state) resolve))
-           form->ast analyze))
+  (-> form expand-all form->ast analyze))

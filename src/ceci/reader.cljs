@@ -229,7 +229,7 @@
   (let [splicing? (= (next-ch reader) "@")
         reader (if splicing? (-> reader advance advance) (advance reader))
         [reader form] (read-next-form reader)]
-    [reader (list (if splicing? 'unquote-splice 'unquote) form)]))
+    [reader (list (if splicing? 'unquote-splicing 'unquote) form)]))
 
 (defn read-var [reader]
   (let [[reader form] (read-next-form (advance reader))]
