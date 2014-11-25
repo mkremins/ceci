@@ -173,29 +173,23 @@
 
 ;; ns
 
-(defn itself-or-empty-obj [ns-name-part]
+(defn itself-or-empty-obj [ident]
   {:type :LogicalExpression :operator "||"
-   :left (identifier (munge ns-name-part))
-   :right {:type :ObjectExpression :properties []}})
+   :left ident :right {:type :ObjectExpression :properties []}})
 
-(defn define-if-undefined [ns-name-part]
-  (assign (identifier (munge ns-name-part))
-          (itself-or-empty-obj ns-name-part)))
+(defn define-if-undefined [ident]
+  (assign ident (itself-or-empty-obj ident)))
 
-(defn ns-name-parts [ns-name]
-  (let [subparts (str/split (str ns-name) #"\.")]
-    (loop [parts [] idx 0]
-      (if-let [subpart (get subparts idx)]
-        (recur (conj parts (str (when (seq parts) (str (peek parts) ".")) subpart))
-               (inc idx))
-        parts))))
+(defn ancestor-ns-names [ns-name]
+  (let [parts (str/split ns-name #"\.")]
+    (for [n (map inc (range (count parts)))]
+      (str/join \. (take n parts)))))
 
 (defmethod generate-special :ns [{:keys [name]}]
-  (let [[root & more] (ns-name-parts name)]
-    (block {:type :VariableDeclaration :kind "var"
+  (let [[root & more] (map (comp identifier munge) (ancestor-ns-names name))]
+    (block {:type :VariableDeclaration :kind :var
             :declarations [{:type :VariableDeclarator
-                            :id (identifier (munge root))
-                            :init (itself-or-empty-obj root)}]}
+                            :id root :init (itself-or-empty-obj root)}]}
            (map define-if-undefined more))))
 
 ;; collections
