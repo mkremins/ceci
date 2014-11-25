@@ -241,7 +241,7 @@
       :methods methods
       :variadic? (> num-variadic-methods 0))))
 
-;; let forms
+;; let and letfn forms
 
 (defn analyze-bindings [env {:keys [children] :as bindings}]
   (assert (= (:type bindings) :vector))
@@ -260,6 +260,16 @@
   (let [[body-env bindings] (analyze-bindings env bindings)]
     (assoc ast :op :let
       :bindings bindings
+      :body (analyze-block body-env body))))
+
+(defmethod analyze-list 'letfn* [env {[_ bindings & body] :children :as ast}]
+  (let [bsyms (map (comp first :form) (:children bindings))
+        body-env (update env :locals concat bsyms)
+        fn-asts (->> (:children bindings)
+                     (map #(cons 'fn* (:form %)))
+                     (map #(analyze (expr-env body-env) (form->ast %))))]
+    (assoc env :op :letfn
+      :bindings (vec (zipmap bsyms fn-asts))
       :body (analyze-block body-env body))))
 
 ;; loop and recur forms

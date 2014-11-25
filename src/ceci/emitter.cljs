@@ -134,16 +134,22 @@
                    :cases (map generate-fn-case methods)
                    :lexical false})}))
 
-;; let, loop, recur
+;; let, letfn, loop, recur
 
 (defn generate-bindings
   ([bindings] (generate-bindings bindings #{}))
   ([bindings locals]
-    (for [[k v] bindings]
-      (assign (identifier (munge k))
-              (if (contains? locals v) (identifier (munge v)) (generate v))))))
+    {:type :VariableDeclaration :kind :var
+     :declarations (for [[k v] bindings]
+                     {:type :VariableDeclarator
+                      :id (identifier (munge k))
+                      :init (if (contains? locals v)
+                              (identifier (munge v)) (generate v))})}))
 
 (defmethod generate-special :let [{:keys [bindings body]}]
+  (block (generate-bindings bindings) (map generate body)))
+
+(defmethod generate-special :letfn [{:keys [bindings body]}]
   (block (generate-bindings bindings) (map generate body)))
 
 (defmethod generate-special :loop [{:keys [bindings body env]}]
