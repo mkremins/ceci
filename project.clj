@@ -7,10 +7,13 @@
 
   :dependencies
   [[org.clojure/clojure "1.6.0"]
-   [org.clojure/clojurescript "0.0-2371"]]
+   [org.clojure/clojurescript "0.0-2371"]
+   [mkremins/fs "0.3.0"]
+   [quile/dependency-cljs "0.1.4"]]
 
   :node-dependencies
-  [[escodegen "1.4.1"]]
+  [[escodegen "1.4.1"]
+   [mkdirp "0.5.0"]]
 
   :plugins
   [[lein-cljsbuild "1.0.3"]

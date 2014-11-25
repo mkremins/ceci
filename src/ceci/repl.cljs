@@ -1,15 +1,7 @@
 (ns ceci.repl
-  (:require [clojure.string :as str]
-            [ceci.analyzer :as analyzer]
-            [ceci.emitter :as emitter]
-            [ceci.reader :as reader]))
+  (:require [clojure.string :as str]))
 
 (def readline (js/require "readline"))
-
-(defn write-js [cljs-source]
-  (->> (reader/read-code cljs-source)
-       (map analyzer/analyze-form)
-       emitter/emit-all))
 
 (def banner
   (str/join "\n"
@@ -19,7 +11,7 @@
 
 (defn launch!
   "Launches the REPL, handing control of stdin and stdout to the REPL session."
-  []
+  [write-js]
   (println banner)
   (js/eval "user = {};") ;; initialize the user namespace
   (let [cli (.createInterface readline

@@ -287,10 +287,14 @@
     (raise "The ns macro supports only :require at this time." form))
   (reduce add-libspec ns-spec libspecs))
 
-(defmethod analyze-list 'ns [env {[_ ns-sym & clauses] :form :as ast}]
+(defn parse-ns-decl [[_ ns-sym & clauses]]
   (let [ns-spec (create-ns-spec (str ns-sym))]
-    (swap! state enter-ns (reduce add-require-clause ns-spec clauses)))
-  (assoc ast :op :ns :name ns-sym))
+    (reduce add-require-clause ns-spec clauses)))
+
+(defmethod analyze-list 'ns [env ast]
+  (let [ns-spec (parse-ns-decl (:form ast))]
+    (swap! state enter-ns ns-spec)
+    (assoc ast :op :ns :name (:name ns-spec))))
 
 ;; generic interface
 
