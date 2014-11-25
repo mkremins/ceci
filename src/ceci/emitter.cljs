@@ -12,15 +12,15 @@
 
 (defn munge [s]
   (-> (name s)
-      (str/replace #"\+" "_PLUS_")
-      (str/replace #"-" "_")
-      (str/replace #"\*" "_STAR_")
-      (str/replace #"/" "_SLASH_")
-      (str/replace #"\?" "_QMARK_")
-      (str/replace #"!" "_BANG_")
-      (str/replace #"<" "_LT_")
-      (str/replace #">" "_GT_")
-      (str/replace #"=" "_EQ_")))
+      (str/replace \+ "_PLUS_")
+      (str/replace \- "_")
+      (str/replace \* "_STAR_")
+      (str/replace \/ "_SLASH_")
+      (str/replace \? "_QMARK_")
+      (str/replace \! "_BANG_")
+      (str/replace \< "_LT_")
+      (str/replace \> "_GT_")
+      (str/replace \= "_EQ_")))
 
 (defn array* [elements]
   {:type :ArrayExpression :elements elements})
