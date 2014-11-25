@@ -96,6 +96,9 @@
    :callee (generate ctor)
    :arguments (map generate args)})
 
+(defmethod generate-special :set! [{:keys [target val]}]
+  (assign (generate target) (generate val)))
+
 (defmethod generate-special :throw [{:keys [env exception]}]
   {:type :ThrowStatement
    :argument (generate exception)})

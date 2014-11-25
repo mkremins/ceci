@@ -203,6 +203,11 @@
 (defmethod analyze-list 'quote [env {[_ ast] :children}]
   (analyze (assoc env :quoted? true) ast))
 
+(defmethod analyze-list 'set! [env {[_ target val] :children :as ast}]
+  (assoc ast :op :set!
+    :target (analyze (expr-env env) target)
+    :val (analyze (expr-env env) val)))
+
 (defmethod analyze-list 'throw [env {[_ exception] :children :as ast}]
   (assoc ast :op :throw
     :exception (analyze (expr-env env) exception)))
