@@ -38,7 +38,7 @@
     (fs/slurp "./resources/runtime.js")))
 
 (defn compile-forms [forms]
-  (emitter/emit-all (map analyzer/analyze-form forms)))
+  (emitter/emit-all (map analyzer/analyze forms)))
 
 (defn compile-directory [dirpath]
   (let [sources (load-sources dirpath)

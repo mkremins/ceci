@@ -1,5 +1,5 @@
 (ns ceci.analyzer
-  (:refer-clojure :exclude [ns-name resolve])
+  (:refer-clojure :exclude [macroexpand macroexpand-1 resolve])
   (:require [ceci.emitter :as emitter]
             [ceci.util :refer [merge-meta raise update]]))
 
@@ -59,8 +59,7 @@
 
 (defn expand-macro [form]
   (if-let [macro (get-in @state [:macros (resolve (first form))])]
-    (let [metadata (meta form)]
-      (merge-meta (apply macro (rest form)) metadata))
+    (apply macro (rest form))
     form))
 
 (defn desugar-new-syntax
@@ -73,33 +72,20 @@
         (list* 'new (if cns (symbol cns cname) (symbol cname)) args))
       form)))
 
-(defn expand-once [form]
+(defn macroexpand-1 [form]
   (if (and (list? form) (symbol? (first form)))
     (-> form expand-macro desugar-new-syntax)
     form))
 
-(defn expand
-  "Expands `form` repeatedly using `expand-once` until the result cannot be
-  expanded further, then returns the result."
+(defn macroexpand
+  "Macroexpands `form` repeatedly until the result cannot be expanded further,
+  then returns the result."
   [form]
   (loop [original form
-         expanded (expand-once form)]
-    (if (= original expanded)
-      original
-      (recur expanded (expand-once expanded)))))
-
-(defn expand-all
-  [form]
-  "Walks `form` from the top down, applying `expand` to each subform, and
-  returns the result."
-  (let [form (expand form)
-        metadata (meta form)
-        expanded (condp #(%1 %2) form
-                   map? (apply hash-map (map expand-all (flatten1 form)))
-                   (some-fn list? seq?) (map expand-all form)
-                   coll? (into (empty form) (map expand-all form))
-                   form)]
-    (merge-meta expanded metadata)))
+         expanded (macroexpand-1 form)]
+    (if (= expanded original)
+      (merge-meta expanded (meta form))
+      (recur expanded (macroexpand-1 expanded)))))
 
 ;; syntax-quote
 
@@ -130,7 +116,7 @@
   (condp #(%1 %2) form
     (some-fn true? false?) :boolean
     keyword? :keyword
-    (some-fn list? seq?) :list
+    seq? :list
     map? :map
     nil? :nil
     number? :number
@@ -139,116 +125,85 @@
     symbol? :symbol
     vector? :vector))
 
-(defn form->ast [form]
-  (let [type (node-type form)
-        ast {:form form :meta (meta form) :type type}]
-    (if (coll? form)
-      (assoc ast :op :coll :children (map form->ast form))
-      (assoc ast :op :const))))
-
-;; AST analysis
+(defn ast [op form env & attrs]
+  (merge {:op op :form form :env env :meta (meta form) :type (node-type form)}
+         (apply hash-map attrs)))
 
 (declare analyze)
 
 (defn expr-env [env]
   (assoc env :context :expr))
 
-(defn analyze-block [env exprs]
+(defn analyze-block [env forms]
   (let [body-env (assoc env :context :statement)
-        return-env (assoc env :context (if (= (:context env) :statement)
-                                           :statement :return))]
-    (conj (mapv (partial analyze body-env) (butlast exprs))
-          (analyze return-env (last exprs)))))
+        return-env (update env :context #(if (= % :statement) % :return))]
+    (conj (mapv (partial analyze body-env) (butlast forms))
+          (analyze return-env (last forms)))))
 
-(defmulti analyze-list (fn [_ {:keys [form]}] (first form)))
+(defmulti analyze-list (fn [_ form] (first form)))
 
-;; simple special forms
+;; special forms
 
-(defmethod analyze-list 'def [env {[_ name & [init]] :children :as ast}]
-  (let [analyze* (partial analyze (expr-env env))]
-    (assoc ast :op :def
-      :name (analyze* name)
-      :init (analyze* (or init (form->ast nil))))))
+(defmethod analyze-list 'def [env [_ name init :as form]]
+  (ast :def form env
+    :name (analyze (expr-env env) name)
+    :init (analyze (expr-env env) init)))
 
-(defmethod analyze-list 'defmacro [env {[_ sym & args] :form :as ast}]
-  (let [analyze* (partial analyze (expr-env env))
-        fn-ast (-> (cons 'fn* args) form->ast analyze*)
+(defmethod analyze-list 'defmacro [env [_ sym & more :as form]]
+  (let [fn-ast (analyze (expr-env env) (cons 'fn* more))
         macro (js/eval (str "(" (emitter/emit fn-ast) ")"))
         full-sym (symbol (:current-ns @state) (name sym))]
     (swap! state assoc-in [:macros full-sym] macro)
-    (assoc ast :op :def
-      :name (analyze* (second (:children ast)))
+    (ast :def form env
+      :name (analyze (expr-env env) sym)
       :init fn-ast)))
 
-(defmethod analyze-list 'deftype* [env {[_ name fields & specs] :children :as ast}]
-  (assoc ast :op :deftype
+(defmethod analyze-list 'deftype* [env [_ name fields & specs :as form]]
+  (ast :deftype form env
     :name (analyze (expr-env env) name)
-    :fields (map :form (:children fields))))
+    :fields fields))
 
-(defmethod analyze-list 'do [env {[_ & body] :children :as ast}]
-  (assoc ast :op :do
+(defmethod analyze-list 'do [env [_ & body :as form]]
+  (ast :do form env
     :body (analyze-block env body)))
 
-(defmethod analyze-list 'if [env {[_ test then else] :children :as ast}]
-  (assoc ast :op :if
-    :test (analyze (expr-env env) test)
-    :then (analyze env then)
-    :else (analyze env else)))
-
-(defmethod analyze-list 'new [env {[_ ctor & args] :children :as ast}]
-  (assoc ast :op :new
-    :ctor (analyze (expr-env env) ctor)
-    :args (map (partial analyze (expr-env env)) args)))
-
-(defmethod analyze-list 'quote [env {[_ ast] :children}]
-  (analyze (assoc env :quoted? true) ast))
-
-(defmethod analyze-list 'set! [env {[_ target val] :children :as ast}]
-  (assoc ast :op :set!
-    :target (analyze (expr-env env) target)
-    :val (analyze (expr-env env) val)))
-
-(defmethod analyze-list 'throw [env {[_ exception] :children :as ast}]
-  (assoc ast :op :throw
-    :exception (analyze (expr-env env) exception)))
-
-;; fn forms
-
-(defn analyze-method [env [params & body]]
-  (let [params (map :form (:children params))
-        _ (assert (every? symbol? params))
-        variadic? (some #{'&} params)
+(defn analyze-method [env [params & body :as form]]
+  (assert (every? symbol? params))
+  (let [variadic? (some #{'&} params)
         params (vec (remove #{'&} params))
         env (-> env (update :locals concat params) (assoc :context :return))]
-    {:op :fn-method
-     :params params
-     :variadic? variadic?
-     :fixed-arity (count (if variadic? (butlast params) params))
-     :body (analyze-block env body)}))
+    (ast :fn-method form env
+      :params params
+      :variadic? variadic?
+      :fixed-arity (count (if variadic? (butlast params) params))
+      :body (analyze-block env body))))
 
-(defmethod analyze-list 'fn* [env {[_ & more] :children :as ast}]
-  (let [[local more] (if (= (:type (first more)) :symbol)
+(defmethod analyze-list 'fn* [env [_ & more :as form]]
+  (let [[local more] (if (symbol? (first more))
                        [(first more) (rest more)] [nil more])
         methods (map (partial analyze-method env)
-                     (if (= (:type (first more)) :vector)
-                       (list more) (map :children more)))
+                     (if (vector? (first more)) (list more) more))
         num-variadic-methods (count (filter :variadic? methods))]
-    (when (> num-variadic-methods 1)
-      (raise "only one variadic method allowed per function"))
-    (assoc ast :op :fn
-      :local (:form local (gensym "fn_"))
+    (assert (<= num-variadic-methods 1)
+      "Only one variadic method allowed per function.")
+    (ast :fn form env
+      :local (or local (gensym "fn_"))
       :max-fixed-arity (apply max (map :fixed-arity methods))
       :methods methods
       :variadic? (> num-variadic-methods 0))))
 
-;; let and letfn forms
+(defmethod analyze-list 'if [env [_ test then else :as form]]
+  (ast :if form env
+    :test (analyze (expr-env env) test)
+    :then (analyze env then)
+    :else (analyze env else)))
 
-(defn analyze-bindings [env {:keys [children] :as bindings}]
-  (assert (= (:type bindings) :vector))
-  (assert (even? (count children)))
+(defn analyze-bindings [env bindings]
+  (assert (vector? bindings))
+  (assert (even? (count bindings)))
   (loop [body-env env
          analyzed []
-         pairs (for [[k v] (partition 2 children)] [(:form k) v])]
+         pairs (partition 2 bindings)]
     (if-let [[bsym bval] (first pairs)]
       (do (assert (symbol? bsym))
           (recur (update body-env :locals conj bsym)
@@ -256,40 +211,33 @@
                  (rest pairs)))
       [body-env analyzed])))
 
-(defmethod analyze-list 'let* [env {[_ bindings & body] :children :as ast}]
+(defmethod analyze-list 'let* [env [_ bindings & body :as form]]
   (let [[body-env bindings] (analyze-bindings env bindings)]
-    (assoc ast :op :let
+    (ast :let form env
       :bindings bindings
       :body (analyze-block body-env body))))
 
-(defmethod analyze-list 'letfn* [env {[_ bindings & body] :children :as ast}]
-  (let [bsyms (map (comp first :form) (:children bindings))
+(defmethod analyze-list 'letfn* [env [_ bindings & body :as form]]
+  (let [bsyms (map first bindings)
         body-env (update env :locals concat bsyms)
-        fn-asts (->> (:children bindings)
-                     (map #(cons 'fn* (:form %)))
-                     (map #(analyze (expr-env body-env) (form->ast %))))]
-    (assoc env :op :letfn
+        fn-asts (map #(analyze (expr-env body-env) (cons 'fn* %)) bindings)]
+    (ast :letfn form env
       :bindings (vec (zipmap bsyms fn-asts))
       :body (analyze-block body-env body))))
 
-;; loop and recur forms
-
-(defmethod analyze-list 'loop* [env {[_ bindings & body] :children :as ast}]
+(defmethod analyze-list 'loop* [env [_ bindings & body :as form]]
   (let [[body-env bindings] (analyze-bindings env bindings)
-        ast (assoc ast :op :loop :bindings bindings)
-        body-env (assoc body-env :recur-point ast)]
-    (assoc ast :body (analyze-block body-env body))))
+        body-env (assoc body-env :recur-point {:bindings bindings})]
+    (ast :loop form env
+      :bindings bindings
+      :body (analyze-block body-env body))))
 
-(defmethod analyze-list 'recur [env {[_ & args] :children :as ast}]
-  (if-let [recur-point (:recur-point env)]
-    (assoc ast :op :recur
-      :recur-point recur-point
-      :args (mapv (partial analyze (expr-env env)) args))
-    (raise "can't recur here – no enclosing loop" (:form ast))))
+(defmethod analyze-list 'new [env [_ ctor & args :as form]]
+  (ast :new form env
+    :ctor (analyze (expr-env env) ctor)
+    :args (map (partial analyze (expr-env env)) args)))
 
-;; ns forms
-
-(defn add-libspec [ns-spec libspec]
+(defn require-libspec [ns-spec libspec]
   (condp #(%1 %2) libspec
     symbol? (require-ns ns-spec libspec)
     vector? (let [[required & {alias :as, referred :refer}] libspec]
@@ -297,45 +245,64 @@
                           (refer-symbols required referred)))
     (raise "Only vectors and symbols may be used as libspecs." libspec)))
 
-(defn add-require-clause [ns-spec [head & libspecs :as form]]
-  (when-not (= head :require)
-    (raise "The ns macro supports only :require at this time." form))
-  (reduce add-libspec ns-spec libspecs))
-
 (defn parse-ns-decl [[_ ns-sym & clauses]]
-  (let [ns-spec (create-ns-spec (str ns-sym))]
-    (reduce add-require-clause ns-spec clauses)))
+  (reduce (fn [ns-spec [head & libspecs]]
+            (assert (= head :require)
+              "The ns macro supports only :require at this time.")
+            (reduce require-libspec ns-spec libspecs))
+          (create-ns-spec (str ns-sym)) clauses))
 
-(defmethod analyze-list 'ns [env ast]
-  (let [ns-spec (parse-ns-decl (:form ast))]
+(defmethod analyze-list 'ns [env form]
+  (let [ns-spec (parse-ns-decl form)]
     (swap! state enter-ns ns-spec)
-    (assoc ast :op :ns :name (:name ns-spec))))
+    (ast :ns form env :name (:name ns-spec))))
 
-;; generic interface
+(defmethod analyze-list 'quote [env [_ expr]]
+  (analyze (assoc env :quoted? true) expr))
 
-(defn analyze-coll [env ast]
-  (update ast :children #(map (partial analyze (expr-env env)) %)))
+(defmethod analyze-list 'recur [env [_ & args :as form]]
+  (if-let [recur-point (:recur-point env)]
+    (ast :recur form env
+      :recur-point recur-point
+      :args (mapv (partial analyze (expr-env env)) args))
+    (raise "May only recur within loop." form)))
 
-(defmethod analyze-list :default [env {:keys [form children] :as ast}]
-  (if (or (:quoted? env) (empty? children))
-    (analyze-coll env ast)
-    (assoc ast :op :invoke
-      :fn (analyze (expr-env env) (first children))
-      :args (map (partial analyze (expr-env env)) (rest children)))))
+(defmethod analyze-list 'set! [env [_ target val :as form]]
+  (ast :set! form env
+    :target (analyze (expr-env env) target)
+    :val (analyze (expr-env env) val)))
 
-(defn analyze-symbol [env {sym :form :as ast}]
-  (cond (:quoted? env) ast
-        ((set (:locals env)) sym) ast
-        :else (assoc ast :form (resolve sym))))
+(defmethod analyze-list 'throw [env [_ exception :as form]]
+  (ast :throw form env
+    :exception (analyze (expr-env env) exception)))
+
+;; generic forms
+
+(defn analyze-coll [env form]
+  (ast :coll form env
+    :children (map (partial analyze (expr-env env)) form)))
+
+(defn analyze-const [env form]
+  (ast :const form env))
+
+(defmethod analyze-list :default [env form]
+  (if (or (:quoted? env) (empty? form))
+    (analyze-coll env form)
+    (ast :invoke form env
+      :fn (analyze (expr-env env) (first form))
+      :args (map (partial analyze (expr-env env)) (rest form)))))
+
+(defn analyze-symbol [env sym]
+  (if (or (:quoted? env) (contains? (set (:locals env)) sym))
+    (analyze-const env sym)
+    (ast :const sym env :form (resolve sym))))
 
 (defn analyze
-  ([ast] (analyze {:context :statement :locals [] :quoted? false} ast))
-  ([env {:keys [op type] :as ast}]
-    (let [ast (assoc ast :env env)]
-      (cond (= type :list) (analyze-list env ast)
-            (= op :coll) (analyze-coll env ast)
-            (= type :symbol) (analyze-symbol env ast)
-            :else ast))))
-
-(defn analyze-form [form]
-  (-> form expand-all form->ast analyze))
+  ([form] (analyze {:context :statement :locals [] :quoted? false} form))
+  ([env form]
+    (let [form (cond-> form (not (:quoted? env)) macroexpand)]
+      (condp #(%1 %2) form
+        seq? (analyze-list env form)
+        coll? (analyze-coll env form)
+        symbol? (analyze-symbol env form)
+        (analyze-const env form)))))
