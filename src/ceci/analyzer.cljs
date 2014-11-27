@@ -286,8 +286,13 @@
 ;; generic forms
 
 (defn analyze-coll [env form]
-  (ast :coll form env
-    :children (map (partial analyze (expr-env env)) form)))
+  (let [analyze* (partial analyze (expr-env env))]
+    (if (map? form)
+      (ast :coll form env
+        :keys (map analyze* (keys form))
+        :vals (map analyze* (vals form)))
+      (ast :coll form env
+        :items (map analyze* form)))))
 
 (defn analyze-const [env form]
   (ast :const form env))

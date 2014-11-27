@@ -179,32 +179,29 @@
 
 (defmulti coll->js :type)
 
-(defmethod coll->js :list [{:keys [children]}]
-  (if (empty? children)
+(defmethod coll->js :list [{:keys [items]}]
+  (if (empty? items)
     (ident "cljs.core.List.EMPTY")
-    (call "cljs.core.list" (map ->js children))))
+    (call "cljs.core.list" (map ->js items))))
 
-(defmethod coll->js :vector [{:keys [children]}]
-  (if (empty? children)
+(defmethod coll->js :vector [{:keys [items]}]
+  (if (empty? items)
     (ident "cljs.core.PersistentVector.EMPTY")
     (call "cljs.core.PersistentVector.fromArray"
-          (array* (map ->js children)) (literal true))))
+          (array* (map ->js items)) (literal true))))
 
-(defmethod coll->js :map [{:keys [children]}]
-  (if (empty? children)
+(defmethod coll->js :map [{:keys [keys vals]}]
+  (if (empty? keys)
     (ident "cljs.core.PersistentArrayMap.EMPTY")
-    (let [pairs (map :children children)
-          ks (map first pairs)
-          vs (map second pairs)]
-      (new* "cljs.core.PersistentArrayMap.fromArray"
-            (array* (map ->js (interleave ks vs)))
-            (literal true) (literal false)))))
+    (new* "cljs.core.PersistentArrayMap.fromArray"
+          (array* (map ->js (interleave keys vals)))
+          (literal true) (literal false))))
 
-(defmethod coll->js :set [{:keys [children]}]
-  (if (empty? children)
+(defmethod coll->js :set [{:keys [items]}]
+  (if (empty? items)
     (ident "cljs.core.PersistentHashSet.EMPTY")
     (call "cljs.core.PersistentHashSet.fromArray"
-          (array* (map ->js children)) (literal true))))
+          (array* (map ->js items)) (literal true))))
 
 ;; constants
 
