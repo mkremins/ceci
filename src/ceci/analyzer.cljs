@@ -144,36 +144,42 @@
 
 ;; special forms
 
+(defn analyze-var [env sym]
+  (ast :var (symbol (:current-ns @state) (name sym)) env))
+
 (defmethod analyze-list 'def [env [_ name init :as form]]
   (ast :def form env
-    :name (analyze (expr-env env) name)
+    :name name
+    :var (analyze-var env name)
     :init (analyze (expr-env env) init)))
 
-(defmethod analyze-list 'defmacro [env [_ sym & more :as form]]
-  (let [fn-ast (analyze (expr-env env) (cons 'fn* more))
-        macro (js/eval (str "(" (emitter/emit fn-ast) ")"))
-        full-sym (symbol (:current-ns @state) (name sym))]
-    (swap! state assoc-in [:macros full-sym] macro)
-    (ast :def form env
-      :name (analyze (expr-env env) sym)
-      :init fn-ast)))
+(defmethod analyze-list 'defmacro [env [_ name & more :as form]]
+  (let [def-ast (analyze env `(def ~name (fn* ~@more)))
+        macro (js/eval (str "(" (emitter/emit (:init def-ast)) ")"))]
+    (swap! state assoc-in [:macros (:form (:var def-ast))] macro)
+    def-ast))
 
 (defmethod analyze-list 'deftype* [env [_ name fields & specs :as form]]
   (ast :deftype form env
-    :name (analyze (expr-env env) name)
+    :name name
+    :var (analyze-var env name)
     :fields fields))
 
 (defmethod analyze-list 'do [env [_ & body :as form]]
   (ast :do form env
     :body (analyze-block env body)))
 
+(defn analyze-local [env sym]
+  (ast :local sym env :name (gensym (name sym))))
+
 (defn analyze-method [env [params & body :as form]]
   (assert (every? symbol? params))
   (let [variadic? (some #{'&} params)
         params (vec (remove #{'&} params))
-        env (-> env (update :locals concat params) (assoc :context :return))]
+        locals (zipmap params (map (partial analyze-local env) params))
+        env (-> env (update :locals merge locals) (assoc :context :return))]
     (ast :fn-method form env
-      :params params
+      :params (map locals params)
       :variadic? variadic?
       :fixed-arity (count (if variadic? (butlast params) params))
       :body (analyze-block env body))))
@@ -205,10 +211,10 @@
          analyzed []
          pairs (partition 2 bindings)]
     (if-let [[bsym bval] (first pairs)]
-      (do (assert (symbol? bsym))
-          (recur (update body-env :locals conj bsym)
-                 (conj analyzed [bsym (analyze (expr-env body-env) bval)])
-                 (rest pairs)))
+      (let [local (analyze-local (expr-env body-env) bsym)]
+        (recur (assoc-in body-env [:locals bsym] local)
+               (conj analyzed [local (analyze (expr-env body-env) bval)])
+               (rest pairs)))
       [body-env analyzed])))
 
 (defmethod analyze-list 'let* [env [_ bindings & body :as form]]
@@ -219,10 +225,11 @@
 
 (defmethod analyze-list 'letfn* [env [_ bindings & body :as form]]
   (let [bsyms (map first bindings)
-        body-env (update env :locals concat bsyms)
+        locals (zipmap bsyms (map (partial analyze-local env) bsyms))
+        body-env (update env :locals merge locals)
         fn-asts (map #(analyze (expr-env body-env) (cons 'fn* %)) bindings)]
     (ast :letfn form env
-      :bindings (vec (zipmap bsyms fn-asts))
+      :bindings (vec (zipmap (map locals bsyms) fn-asts))
       :body (analyze-block body-env body))))
 
 (defmethod analyze-list 'loop* [env [_ bindings & body :as form]]
@@ -293,12 +300,15 @@
       :args (map (partial analyze (expr-env env)) (rest form)))))
 
 (defn analyze-symbol [env sym]
-  (if (or (:quoted? env) (contains? (set (:locals env)) sym))
+  (if (:quoted? env)
     (analyze-const env sym)
-    (ast :const sym env :form (resolve sym))))
+    (or (get-in env [:locals sym])
+        (if (= (namespace sym) "js")
+          (ast :js-var sym env)
+          (ast :var (resolve sym) env)))))
 
 (defn analyze
-  ([form] (analyze {:context :statement :locals [] :quoted? false} form))
+  ([form] (analyze {:context :statement :locals {} :quoted? false} form))
   ([env form]
     (let [form (cond-> form (not (:quoted? env)) macroexpand)]
       (condp #(%1 %2) form
