@@ -1,5 +1,5 @@
 (ns ceci.analyzer
-  (:refer-clojure :exclude [macroexpand macroexpand-1 resolve])
+  (:refer-clojure :exclude [macroexpand macroexpand-1])
   (:require [ceci.emitter :as emitter]
             [ceci.util :refer [merge-meta raise update]]))
 
@@ -28,7 +28,7 @@
     vec vector vector?])
 
 (defn create-ns-spec [ns-name]
-  (-> {:name ns-name}
+  (-> {:name ns-name :defs #{}}
       (require-ns "cljs.core") (refer-symbols "cljs.core" core-defs)))
 
 (defn enter-ns [state {:keys [name] :as ns-spec}]
@@ -38,29 +38,39 @@
 
 ;; symbol expansion
 
-(defn resolve-ns [ns-name]
-  (let [{:keys [current-ns namespaces]} @state]
-    (or (namespaces ns-name)
-        (when-let [ns-name* (get-in namespaces [current-ns :aliases ns-name])]
-          (namespaces ns-name*)))))
+(defn resolve-ns
+  ([ns-name]
+    (let [{:keys [current-ns namespaces]} @state]
+      (resolve-ns ns-name (namespaces current-ns))))
+  ([ns-name ns-spec]
+    (let [{:keys [namespaces]} @state]
+      (or (namespaces ns-name)
+          (when-let [ns-name* (get-in ns-spec [:aliases ns-name])]
+            (namespaces ns-name*))))))
 
-(defn resolve
+(defn canonicalize
   "Returns the canonical expansion of `sym` in the context of `ns-spec`. Uses
   the currently active namespace if no `ns-spec` is provided."
-  ([sym] (resolve sym (resolve-ns (:current-ns @state))))
+  ([sym] (canonicalize sym (resolve-ns (:current-ns @state))))
   ([sym ns-spec]
-    (if-let [sym-ns (namespace sym)]
-      (if (= sym-ns "js")
-        sym
-        (symbol (:name (resolve-ns sym-ns)) (name sym)))
-      (symbol (get (:referred ns-spec) sym (:name ns-spec)) (str sym)))))
+    (if-let [ns-name (namespace sym)]
+      (if (= ns-name "js")
+        sym ; leave e.g. js/foo.bar untouched
+        (if-let [required-ns (:name (resolve-ns ns-name ns-spec))]
+          (symbol required-ns (name sym))
+          (raise "No such namespace." sym)))
+      (if (contains? (:defs ns-spec) sym)
+        (symbol (:name ns-spec) (name sym))
+        (if-let [referred-ns (get-in ns-spec [:referred sym])]
+          (symbol referred-ns (name sym))
+          (raise "Symbol not defined in current namespace." sym))))))
 
 ;; macroexpansion & syntax desugaring
 
 (defn expand-macro [form]
-  (if-let [macro (get-in @state [:macros (resolve (first form))])]
-    (apply macro (rest form))
-    form))
+  (try (let [macro (get-in @state [:macros (canonicalize (first form))])]
+         (apply macro (rest form)))
+       (catch :default _ form)))
 
 (defn desugar-new-syntax
   "Desugars (Ctor. args) to (new Ctor args)."
@@ -148,6 +158,7 @@
   (ast :var (symbol (:current-ns @state) (name sym)) env))
 
 (defmethod analyze-list 'def [env [_ name init :as form]]
+  (swap! state update-in [:namespaces (:current-ns @state) :defs] conj name)
   (ast :def form env
     :name name
     :var (analyze-var env name)
@@ -160,6 +171,7 @@
     def-ast))
 
 (defmethod analyze-list 'deftype* [env [_ name fields & specs :as form]]
+  (swap! state update-in [:namespaces (:current-ns @state) :defs] conj name)
   (ast :deftype form env
     :name name
     :var (analyze-var env name)
@@ -310,7 +322,7 @@
     (or (get-in env [:locals sym])
         (if (= (namespace sym) "js")
           (ast :js-var sym env)
-          (ast :var (resolve sym) env)))))
+          (ast :var (canonicalize sym) env)))))
 
 (defn analyze
   ([form] (analyze {:context :statement :locals {} :quoted? false} form))
