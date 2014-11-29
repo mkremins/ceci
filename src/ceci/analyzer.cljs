@@ -1,9 +1,9 @@
 (ns ceci.analyzer
-  (:refer-clojure :exclude [macroexpand macroexpand-1])
+  (:refer-clojure :exclude [defmacro macroexpand macroexpand-1])
   (:require [ceci.emitter :as emitter]
             [ceci.util :refer [merge-meta raise update]]))
 
-(def state (atom {:current-ns nil :macros {} :namespaces {}}))
+(def state (atom {:current-ns nil :namespaces {}}))
 
 ;; namespace management
 
@@ -28,7 +28,7 @@
     vec vector vector?])
 
 (defn create-ns-spec [ns-name]
-  (-> {:name ns-name :defs #{}}
+  (-> {:name ns-name :defs {}}
       (require-ns "cljs.core") (refer-symbols "cljs.core" core-defs)))
 
 (defn enter-ns [state {:keys [name] :as ns-spec}]
@@ -68,8 +68,10 @@
 ;; macroexpansion & syntax desugaring
 
 (defn expand-macro [form]
-  (try (let [macro (get-in @state [:macros (canonicalize (first form))])]
-         (apply macro (rest form)))
+  (try (let [sym (canonicalize (first form))
+             def (get-in @state [:namespaces (namespace sym)
+                                 :defs (symbol (name sym))])]
+         (if (:macro def) (apply (:value def) (rest form)) form))
        (catch :default _ form)))
 
 (defn desugar-new-syntax
@@ -97,7 +99,13 @@
       (merge-meta expanded (meta form))
       (recur expanded (macroexpand-1 expanded)))))
 
-;; syntax-quote
+;; core macros
+
+(defn defmacro [name & more]
+  `(def ~(with-meta name {:macro true}) (fn* ~@more)))
+
+(swap! state assoc-in [:namespaces "cljs.core" :defs 'defmacro]
+  {:op :def :macro true :value defmacro})
 
 (defn syntax-quote [form]
   (let [unquote? (every-pred list? (comp #{'unquote} first))
@@ -118,7 +126,8 @@
       vector? (list 'vec (splice form))
       (raise "Unsupported collection type." form))))
 
-(swap! state assoc-in [:macros 'cljs.core/syntax-quote] syntax-quote)
+(swap! state assoc-in [:namespaces "cljs.core" :defs 'syntax-quote]
+  {:op :def :macro true :value syntax-quote})
 
 ;; AST creation
 
@@ -158,24 +167,21 @@
   (ast :var (symbol (:current-ns @state) (name sym)) env))
 
 (defmethod analyze-list 'def [env [_ name init :as form]]
-  (swap! state update-in [:namespaces (:current-ns @state) :defs] conj name)
-  (ast :def form env
-    :name name
-    :var (analyze-var env name)
-    :init (analyze (expr-env env) init)))
-
-(defmethod analyze-list 'defmacro [env [_ name & more :as form]]
-  (let [def-ast (analyze env `(def ~name (fn* ~@more)))
-        macro (js/eval (str "(" (emitter/emit (:init def-ast)) ")"))]
-    (swap! state assoc-in [:macros (:form (:var def-ast))] macro)
-    def-ast))
+  (swap! state assoc-in [:namespaces (:current-ns @state) :defs name] {}) ; HACK: ensure name bound when analyzing init
+  (let [init (analyze (expr-env env) init)
+        def (merge (ast :def form env
+                     :name name :var (analyze-var env name) :init init)
+                   (select-keys (meta name) [:doc :dynamic :macro :private])
+                   (when (:macro (meta name))
+                     {:value (js/eval (str "(" (emitter/emit init) ")"))}))]
+    (swap! state assoc-in [:namespaces (:current-ns @state) :defs name] def)
+    def))
 
 (defmethod analyze-list 'deftype* [env [_ name fields & specs :as form]]
-  (swap! state update-in [:namespaces (:current-ns @state) :defs] conj name)
-  (ast :deftype form env
-    :name name
-    :var (analyze-var env name)
-    :fields fields))
+  (let [def (ast :deftype form env
+              :name name :var (analyze-var env name) :fields fields)]
+    (swap! state assoc-in [:namespaces (:current-ns @state) :defs name] def)
+    def))
 
 (defmethod analyze-list 'do [env [_ & body :as form]]
   (ast :do form env
