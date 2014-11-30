@@ -230,15 +230,15 @@
 (defn analyze-bindings [env bindings]
   (assert (vector? bindings))
   (assert (even? (count bindings)))
-  (loop [body-env env
+  (loop [env env
          analyzed []
-         pairs (partition 2 bindings)]
-    (if-let [[bsym bval] (first pairs)]
-      (let [local (analyze-local (expr-env body-env) bsym)]
-        (recur (assoc-in body-env [:locals bsym] local)
-               (conj analyzed [local (analyze (expr-env body-env) bval)])
-               (rest pairs)))
-      [body-env analyzed])))
+         bpairs (partition 2 bindings)]
+    (if-let [[bsym bval] (first bpairs)]
+      (let [init (analyze (expr-env env) bval)
+            local (assoc (analyze-local (expr-env env) bsym) :init init)]
+        (recur (assoc-in env [:locals bsym] local)
+               (conj analyzed [local init]) (rest bpairs)))
+      [env analyzed])))
 
 (defmethod analyze-list 'let* [env [_ bindings & body :as form]]
   (let [[body-env bindings] (analyze-bindings env bindings)]
@@ -320,12 +320,34 @@
 (defn analyze-const [env form]
   (ast :const form env))
 
+(defn resolve-ref [ast]
+  (case (:op ast)
+    :local (or (resolve-ref (:init ast)) ast)
+    :var (let [ns-name (namespace (:form ast))
+               sym (symbol (name (:form ast)))
+               def (get-in @state [:namespaces ns-name :defs sym])]
+           (or (resolve-ref (:init def)) ast))
+    ast))
+
+(defn valid-invoke-arity? [f arity]
+  (case (:op f)
+    (:coll :const)
+      (and (#{:keyword :map :set :symbol :vector} (:type f))
+           (#{1 2} arity))
+    :fn
+      (or (and (:variadic? f) (>= arity (:max-fixed-arity f)))
+          (some #(= (:fixed-arity %) arity) (:methods f)))
+    ;else
+      true))
+
 (defmethod analyze-list :default [env form]
   (if (or (:quoted? env) (empty? form))
     (analyze-coll env form)
-    (ast :invoke form env
-      :fn (analyze (expr-env env) (first form))
-      :args (map (partial analyze (expr-env env)) (rest form)))))
+    (let [func (analyze (expr-env env) (first form))
+          args (map (partial analyze (expr-env env)) (rest form))]
+      (when-not (valid-invoke-arity? (resolve-ref func) (count args))
+        (raise (str "Invalid arity: " (count args)) form))
+      (ast :invoke form env :fn func :args args))))
 
 (defn analyze-symbol [env sym]
   (if (:quoted? env)
