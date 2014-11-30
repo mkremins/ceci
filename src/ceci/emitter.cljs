@@ -93,8 +93,9 @@
   (func (map ->js (take fixed-arity params))
         (when variadic?
           (assign (->js (last params))
-                  (call "Array.prototype.slice.call"
-                        (ident "arguments") (literal fixed-arity))))
+                  (call "cljs.core.array_seq"
+                        (call "Array.prototype.slice.call"
+                              (ident "arguments") (literal fixed-arity)))))
         (map ->js body)))
 
 (defn method->js-case [{:keys [fixed-arity variadic?] :as method}]
