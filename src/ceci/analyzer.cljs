@@ -65,6 +65,11 @@
           (symbol referred-ns (name sym))
           (raise "Symbol not defined in current namespace." sym))))))
 
+(defn define
+  ([state sym def-ast] (define state (:current-ns state) sym def-ast))
+  ([state ns-name sym def-ast]
+    (assoc-in state [:namespaces ns-name :defs sym] def-ast)))
+
 ;; macroexpansion & syntax desugaring
 
 (defn expand-macro [form]
@@ -104,7 +109,7 @@
 (defn defmacro [name & more]
   `(def ~(with-meta name {:macro true}) (fn* ~@more)))
 
-(swap! state assoc-in [:namespaces "cljs.core" :defs 'defmacro]
+(swap! state define "cljs.core" 'defmacro
   {:op :def :macro true :value defmacro})
 
 (defn syntax-quote [form]
@@ -126,7 +131,7 @@
       vector? (list 'vec (splice form))
       (raise "Unsupported collection type." form))))
 
-(swap! state assoc-in [:namespaces "cljs.core" :defs 'syntax-quote]
+(swap! state define "cljs.core" 'syntax-quote
   {:op :def :macro true :value syntax-quote})
 
 ;; AST creation
@@ -167,20 +172,20 @@
   (ast :var (symbol (:current-ns @state) (name sym)) env))
 
 (defmethod analyze-list 'def [env [_ name init :as form]]
-  (swap! state assoc-in [:namespaces (:current-ns @state) :defs name] {}) ; HACK: ensure name bound when analyzing init
+  (swap! state define name {}) ; HACK: ensure name is bound when analyzing init
   (let [init (analyze (expr-env env) init)
         def (merge (ast :def form env
                      :name name :var (analyze-var env name) :init init)
                    (select-keys (meta name) [:doc :dynamic :macro :private])
                    (when (:macro (meta name))
                      {:value (js/eval (str "(" (emitter/emit init) ")"))}))]
-    (swap! state assoc-in [:namespaces (:current-ns @state) :defs name] def)
+    (swap! state define name def)
     def))
 
 (defmethod analyze-list 'deftype* [env [_ name fields & specs :as form]]
   (let [def (ast :deftype form env
               :name name :var (analyze-var env name) :fields fields)]
-    (swap! state assoc-in [:namespaces (:current-ns @state) :defs name] def)
+    (swap! state define name def)
     def))
 
 (defmethod analyze-list 'do [env [_ & body :as form]]
