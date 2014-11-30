@@ -330,10 +330,11 @@
 (defn analyze-symbol [env sym]
   (if (:quoted? env)
     (analyze-const env sym)
-    (or (get-in env [:locals sym])
-        (if (= (namespace sym) "js")
-          (ast :js-var sym env)
-          (ast :var (canonicalize sym) env)))))
+    (if-let [local (get-in env [:locals sym])]
+      (assoc-in local [:env :context] (:context env))
+      (if (= (namespace sym) "js")
+        (ast :js-var sym env)
+        (ast :var (canonicalize sym) env)))))
 
 (defn analyze
   ([form] (analyze {:context :statement :locals {} :quoted? false} form))
