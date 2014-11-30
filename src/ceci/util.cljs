@@ -4,33 +4,19 @@
   (map (fn [[k v]] [(f k) v]) m))
 
 (defn update [m k f & args]
-  (apply (partial update-in m [k] f) args))
+  (apply update-in m [k] f args))
 
-;; metadata helpers
-
-(defn metadatable? [form]
-  (or (coll? form) (symbol? form)))
+(def metadatable? (some-fn coll? symbol?))
 
 (defn merge-meta [form metadata]
   (if (metadatable? form)
-      (vary-meta form merge metadata)
-      form))
-
-;; error reporting
-
-(defn raise-missing-source [message form]
-  (throw (js/Error. (str "Compilation error: " message "\n"
-                         "in form: " (pr-str form)
-                         " (source missing)"))))
+    (vary-meta form merge metadata)
+    form))
 
 (defn raise
-  ([message]
-    (throw (js/Error. (str "Compilation error: " message))))
-  ([message form]
-    (if-let [{:keys [line column]} (meta form)]
-      (raise message form line column)
-      (raise-missing-source message form)))
-  ([message form line column]
-    (throw (js/Error. (str "Compilation error: " message "\n"
-                           "in form: " (pr-str form)
-                           " (" line ":" column ")")))))
+  ([msg] (throw (js/Error. msg)))
+  ([msg form]
+    (raise (str msg "\nin form: " (pr-str form) " ("
+                (if-let [{:keys [line column]} (meta form)]
+                  (str line ":" column) "source missing")
+                ")"))))
