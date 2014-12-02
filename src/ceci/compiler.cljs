@@ -1,6 +1,6 @@
 (ns ceci.compiler
   (:require [clojure.string :as str]
-            [ceci.analyzer :as analyzer]
+            [ceci.analyzer :as analyzer :include-macros true]
             [ceci.emitter :as emitter]
             [ceci.reader :as reader]
             [ceci.repl :as repl]
@@ -37,20 +37,26 @@
   (when (= ns-name "cljs.core")
     (fs/slurp "./resources/runtime.js")))
 
-(defn compile-forms [forms]
-  (emitter/emit-all (map analyzer/analyze forms)))
+(defn compile-forms
+  ([forms] (compile-forms (analyzer/default-state) forms))
+  ([state forms]
+    (analyzer/with-state state
+      (emitter/emit-all (map analyzer/analyze forms)))))
 
 (defn compile-directory [dirpath]
   (let [sources (load-sources dirpath)
-        ns-deps (namespace-dep-graph sources)]
+        ns-deps (namespace-dep-graph sources)
+        state (analyzer/default-state)]
     (->> (sort-by key (dep/topo-comparator ns-deps) sources)
          (map (fn [[ns-name forms]]
-                (or (precompiled-js ns-name) (compile-forms forms))))
+                (or (precompiled-js ns-name)
+                    (analyzer/with-state state (compile-forms forms)))))
          str/join)))
 
 (defn -main
   ([]
-    (repl/launch! (comp compile-forms reader/read-code)))
+    (let [state (analyzer/default-state)]
+      (repl/launch! (comp #(compile-forms state %) reader/read-code))))
   ([source-dir out-file]
     (fs/spit out-file (compile-directory source-dir))))
 

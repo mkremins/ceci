@@ -3,7 +3,7 @@
   (:require [ceci.emitter :as emitter]
             [ceci.util :refer [merge-meta raise update]]))
 
-(def state (atom {:current-ns nil :namespaces {}}))
+(def ^:dynamic *state* nil)
 
 ;; namespace management
 
@@ -34,16 +34,14 @@
 (defn enter-ns [state {:keys [name] :as ns-spec}]
   (-> state (assoc-in [:namespaces name] ns-spec) (assoc :current-ns name)))
 
-(swap! state enter-ns (create-ns-spec "user"))
-
 ;; symbol expansion
 
 (defn resolve-ns
   ([ns-name]
-    (let [{:keys [current-ns namespaces]} @state]
+    (let [{:keys [current-ns namespaces]} @*state*]
       (resolve-ns ns-name (namespaces current-ns))))
   ([ns-name ns-spec]
-    (let [{:keys [namespaces]} @state]
+    (let [{:keys [namespaces]} @*state*]
       (or (namespaces ns-name)
           (when-let [ns-name* (get-in ns-spec [:aliases ns-name])]
             (namespaces ns-name*))))))
@@ -51,7 +49,7 @@
 (defn canonicalize
   "Returns the canonical expansion of `sym` in the context of `ns-spec`. Uses
   the currently active namespace if no `ns-spec` is provided."
-  ([sym] (canonicalize sym (resolve-ns (:current-ns @state))))
+  ([sym] (canonicalize sym (resolve-ns (:current-ns @*state*))))
   ([sym ns-spec]
     (if-let [ns-name (namespace sym)]
       (if (= ns-name "js")
@@ -74,8 +72,8 @@
 
 (defn expand-macro [form]
   (try (let [sym (canonicalize (first form))
-             def (get-in @state [:namespaces (namespace sym)
-                                 :defs (symbol (name sym))])]
+             def (get-in @*state* [:namespaces (namespace sym)
+                                   :defs (symbol (name sym))])]
          (if (:macro def) (apply (:value def) (rest form)) form))
        (catch :default _ form)))
 
@@ -109,9 +107,6 @@
 (defn defmacro [name & more]
   `(def ~(with-meta name {:macro true}) (fn* ~@more)))
 
-(swap! state define "cljs.core" 'defmacro
-  {:op :def :macro true :value defmacro})
-
 (defn syntax-quote [form]
   (let [unquote? (every-pred list? (comp #{'unquote} first))
         unquote-splicing? (every-pred list? (comp #{'unquote-splicing} first))
@@ -131,10 +126,15 @@
       vector? (list 'vec (splice form))
       (raise "Unsupported collection type." form))))
 
-(swap! state define "cljs.core" 'syntax-quote
-  {:op :def :macro true :value syntax-quote})
-
 ;; AST creation
+
+(defn default-state []
+  (doto (atom {:current-ns nil :namespaces {}})
+    (swap! enter-ns (create-ns-spec "user"))
+    (swap! define "cljs.core" 'defmacro
+      {:op :def :macro true :value defmacro})
+    (swap! define "cljs.core" 'syntax-quote
+      {:op :def :macro true :value syntax-quote})))
 
 (defn node-type [form]
   (condp #(%1 %2) form
@@ -169,23 +169,23 @@
 ;; special forms
 
 (defn analyze-var [env sym]
-  (ast :var (symbol (:current-ns @state) (name sym)) env))
+  (ast :var (symbol (:current-ns @*state*) (name sym)) env))
 
 (defmethod analyze-list 'def [env [_ name init :as form]]
-  (swap! state define name {}) ; HACK: ensure name is bound when analyzing init
+  (swap! *state* define name {}) ; HACK: ensure name is bound when analyzing init
   (let [init (analyze (expr-env env) init)
         def (merge (ast :def form env
                      :name name :var (analyze-var env name) :init init)
                    (select-keys (meta name) [:doc :dynamic :macro :private])
                    (when (:macro (meta name))
                      {:value (js/eval (str "(" (emitter/emit init) ")"))}))]
-    (swap! state define name def)
+    (swap! *state* define name def)
     def))
 
 (defmethod analyze-list 'deftype* [env [_ name fields & specs :as form]]
   (let [def (ast :deftype form env
               :name name :var (analyze-var env name) :fields fields)]
-    (swap! state define name def)
+    (swap! *state* define name def)
     def))
 
 (defmethod analyze-list 'do [env [_ & body :as form]]
@@ -284,7 +284,7 @@
 
 (defmethod analyze-list 'ns [env form]
   (let [ns-spec (parse-ns-decl form)]
-    (swap! state enter-ns ns-spec)
+    (swap! *state* enter-ns ns-spec)
     (ast :ns form env :name (:name ns-spec))))
 
 (defmethod analyze-list 'quote [env [_ expr]]
@@ -325,7 +325,7 @@
     :local (or (resolve-ref (:init ast)) ast)
     :var (let [ns-name (namespace (:form ast))
                sym (symbol (name (:form ast)))
-               def (get-in @state [:namespaces ns-name :defs sym])]
+               def (get-in @*state* [:namespaces ns-name :defs sym])]
            (or (resolve-ref (:init def)) ast))
     ast))
 
