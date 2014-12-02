@@ -1,7 +1,7 @@
 (ns ceci.analyzer
   (:refer-clojure :exclude [defmacro macroexpand macroexpand-1])
   (:require [ceci.emitter :as emitter]
-            [ceci.util :refer [merge-meta raise update]]))
+            [ceci.util :refer [merge-meta raise update warn]]))
 
 (def ^:dynamic *state* nil)
 
@@ -171,7 +171,12 @@
 (defn analyze-var [env sym]
   (ast :var (symbol (:current-ns @*state*) (name sym)) env))
 
+(defn warn-def-shadows-referral [sym form]
+  (when-let [ns (get-in @*state* [:namespaces (:current-ns @*state*) :referred sym])]
+    (warn (str "Def shadows existing referral: " ns "/" sym) form)))
+
 (defmethod analyze-list 'def [env [_ name init :as form]]
+  (warn-def-shadows-referral name form)
   (swap! *state* define name {}) ; HACK: ensure name is bound when analyzing init
   (let [init (analyze (expr-env env) init)
         def (merge (ast :def form env
@@ -183,6 +188,7 @@
     def))
 
 (defmethod analyze-list 'deftype* [env [_ name fields & specs :as form]]
+  (warn-def-shadows-referral name form)
   (let [def (ast :deftype form env
               :name name :var (analyze-var env name) :fields fields)]
     (swap! *state* define name def)
