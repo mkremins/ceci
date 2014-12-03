@@ -281,12 +281,32 @@
                           (refer-symbols required referred)))
     (raise "Only vectors and symbols may be used as libspecs." libspec)))
 
+(defn exclude-core-defs [ns-spec exclusions]
+  (let [excluded? (comp (partial contains? (set exclusions)) key)
+        core-def? (comp (partial = "cljs.core") val)]
+    (update ns-spec :referrals
+            #(into {} (remove (every-pred excluded? core-def?) %)))))
+
+(defn rename-core-defs [ns-spec renames]
+  (update ns-spec :referrals
+          #(into {} (map (fn [[sym ns :as entry]]
+                           (if (= ns "cljs.core")
+                             [(renames sym sym) ns] entry)) %))))
+
+(defn refer-clojure [ns-spec opts]
+  (let [{:keys [exclude rename] :or {exclude [] rename {}}} opts]
+    (assert (sequential? exclude))
+    (assert (map? rename))
+    (-> ns-spec (exclude-core-defs exclude) (rename-core-defs rename))))
+
+(defn parse-ns-clause [ns-spec [head & more :as form]]
+  (case head
+    :require (reduce require-libspec ns-spec more)
+    :refer-clojure (refer-clojure ns-spec (apply hash-map more))
+    (raise "The ns macro supports only :require and :refer-clojure." form)))
+
 (defn parse-ns-decl [[_ ns-sym & clauses]]
-  (reduce (fn [ns-spec [head & libspecs]]
-            (assert (= head :require)
-              "The ns macro supports only :require at this time.")
-            (reduce require-libspec ns-spec libspecs))
-          (create-ns-spec (str ns-sym)) clauses))
+  (reduce parse-ns-clause (create-ns-spec (str ns-sym)) clauses))
 
 (defmethod analyze-list 'ns [env form]
   (let [ns-spec (parse-ns-decl form)]
