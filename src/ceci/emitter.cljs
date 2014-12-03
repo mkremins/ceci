@@ -151,7 +151,7 @@
   (assign ident (itself-or-empty-obj ident)))
 
 (defn ancestor-ns-names [ns-name]
-  (let [parts (str/split ns-name #"\.")]
+  (let [parts (str/split (str ns-name) #"\.")]
     (for [n (map inc (range (count parts)))]
       (str/join \. (take n parts)))))
 

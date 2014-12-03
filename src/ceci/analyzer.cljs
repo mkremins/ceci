@@ -1,7 +1,7 @@
 (ns ceci.analyzer
   (:refer-clojure :exclude [defmacro macroexpand macroexpand-1])
   (:require [ceci.emitter :as emitter]
-            [ceci.util :refer [merge-meta raise update warn]]))
+            [ceci.util :refer [merge-meta name* ns* raise symbol* update warn]]))
 
 (def ^:dynamic *state* nil)
 
@@ -11,12 +11,10 @@
   ([ns-spec required]
     (require-ns ns-spec required nil))
   ([ns-spec required alias]
-    (let [required (str required)
-          alias (if alias (str alias) required)]
-      (update ns-spec :aliases merge {alias required}))))
+    (update ns-spec :aliases merge {alias (or alias required)})))
 
 (defn refer-symbols [ns-spec from-ns syms]
-  (update ns-spec :referred merge (zipmap syms (repeat (str from-ns)))))
+  (update ns-spec :referred merge (zipmap syms (repeat from-ns))))
 
 (def core-defs
   '[+ - * / = > >= < <= aget and apply aset assoc assoc-in atom boolean comp
@@ -29,7 +27,7 @@
 
 (defn create-ns-spec [ns-name]
   (-> {:name ns-name :defs {}}
-      (require-ns "cljs.core") (refer-symbols "cljs.core" core-defs)))
+      (require-ns 'cljs.core) (refer-symbols 'cljs.core core-defs)))
 
 (defn enter-ns [state {:keys [name] :as ns-spec}]
   (-> state (assoc-in [:namespaces name] ns-spec) (assoc :current-ns name)))
@@ -51,29 +49,27 @@
   the currently active namespace if no `ns-spec` is provided."
   ([sym] (canonicalize sym (resolve-ns (:current-ns @*state*))))
   ([sym ns-spec]
-    (if-let [ns-name (namespace sym)]
-      (if (= ns-name "js")
+    (if-let [ns-name (ns* sym)]
+      (if (= ns-name 'js)
         sym ; leave e.g. js/foo.bar untouched
         (if-let [required-ns (:name (resolve-ns ns-name ns-spec))]
-          (symbol required-ns (name sym))
+          (symbol* required-ns (name sym))
           (raise "No such namespace." sym)))
       (if (contains? (:defs ns-spec) sym)
-        (symbol (:name ns-spec) (name sym))
+        (symbol* (:name ns-spec) (name sym))
         (if-let [referred-ns (get-in ns-spec [:referred sym])]
-          (symbol referred-ns (name sym))
+          (symbol* referred-ns (name sym))
           (raise "Symbol not defined in current namespace." sym))))))
 
-(defn define
-  ([state sym def-ast] (define state (:current-ns state) sym def-ast))
-  ([state ns-name sym def-ast]
-    (assoc-in state [:namespaces ns-name :defs sym] def-ast)))
+(defn define [state sym def-ast]
+  (let [ns-name (or (ns* sym) (:current-ns state))]
+    (assoc-in state [:namespaces ns-name :defs (name* sym)] def-ast)))
 
 ;; macroexpansion & syntax desugaring
 
 (defn expand-macro [form]
   (try (let [sym (canonicalize (first form))
-             def (get-in @*state* [:namespaces (namespace sym)
-                                   :defs (symbol (name sym))])]
+             def (get-in @*state* [:namespaces (ns* sym) :defs (name* sym)])]
          (if (:macro def) (apply (:value def) (rest form)) form))
        (catch :default _ form)))
 
@@ -130,10 +126,10 @@
 
 (defn default-state []
   (doto (atom {:current-ns nil :namespaces {}})
-    (swap! enter-ns (create-ns-spec "user"))
-    (swap! define "cljs.core" 'defmacro
+    (swap! enter-ns (create-ns-spec 'user))
+    (swap! define 'cljs.core/defmacro
       {:op :def :macro true :value defmacro})
-    (swap! define "cljs.core" 'syntax-quote
+    (swap! define 'cljs.core/syntax-quote
       {:op :def :macro true :value syntax-quote})))
 
 (defn node-type [form]
@@ -169,7 +165,7 @@
 ;; special forms
 
 (defn analyze-var [env sym]
-  (ast :var (symbol (:current-ns @*state*) (name sym)) env))
+  (ast :var (symbol* (:current-ns @*state*) (name sym)) env))
 
 (defn warn-def-shadows-referral [sym form]
   (when-let [ns (get-in @*state* [:namespaces (:current-ns @*state*) :referred sym])]
@@ -283,14 +279,14 @@
 
 (defn exclude-core-defs [ns-spec exclusions]
   (let [excluded? (comp (partial contains? (set exclusions)) key)
-        core-def? (comp (partial = "cljs.core") val)]
+        core-def? (comp (partial = 'cljs.core) val)]
     (update ns-spec :referrals
             #(into {} (remove (every-pred excluded? core-def?) %)))))
 
 (defn rename-core-defs [ns-spec renames]
   (update ns-spec :referrals
           #(into {} (map (fn [[sym ns :as entry]]
-                           (if (= ns "cljs.core")
+                           (if (= ns 'cljs.core)
                              [(renames sym sym) ns] entry)) %))))
 
 (defn refer-clojure [ns-spec opts]
@@ -306,7 +302,7 @@
     (raise "The ns macro supports only :require and :refer-clojure." form)))
 
 (defn parse-ns-decl [[_ ns-sym & clauses]]
-  (reduce parse-ns-clause (create-ns-spec (str ns-sym)) clauses))
+  (reduce parse-ns-clause (create-ns-spec ns-sym) clauses))
 
 (defmethod analyze-list 'ns [env form]
   (let [ns-spec (parse-ns-decl form)]
@@ -354,9 +350,8 @@
 (defn resolve-ref [ast]
   (case (:op ast)
     :local (or (resolve-ref (:init ast)) ast)
-    :var (let [ns-name (namespace (:form ast))
-               sym (symbol (name (:form ast)))
-               def (get-in @*state* [:namespaces ns-name :defs sym])]
+    :var (let [sym (:form ast)
+               def (get-in @*state* [:namespaces (ns* sym) :defs (name* sym)])]
            (or (resolve-ref (:init def)) ast))
     ast))
 
@@ -385,7 +380,7 @@
     (analyze-const env sym)
     (if-let [local (get-in env [:locals sym])]
       (assoc-in local [:env :context] (:context env))
-      (if (= (namespace sym) "js")
+      (if (= (ns* sym) 'js)
         (ast :js-var sym env)
         (ast :var (canonicalize sym) env)))))
 

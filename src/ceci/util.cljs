@@ -6,6 +6,15 @@
 (defn update [m k f & args]
   (apply update-in m [k] f args))
 
+(defn name* [sym]
+  (symbol (name sym)))
+
+(defn ns* [sym]
+  (when-let [ns (namespace sym)] (symbol ns)))
+
+(defn symbol* [ns name]
+  (symbol (str ns) (str name)))
+
 (def metadatable? (some-fn coll? symbol?))
 
 (defn merge-meta [form metadata]

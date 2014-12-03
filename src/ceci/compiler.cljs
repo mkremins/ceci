@@ -13,7 +13,8 @@
   (let [fpath (str/replace fpath \_ \-)]
     (as-> (str/split (fs/dirname fpath) #"/") parts
           (conj parts (fs/basename fpath "cljs"))
-          (str/join \. parts))))
+          (str/join \. parts)
+          (symbol parts))))
 
 (defn load-sources
   "Given a `dirpath` from which to load source files, returns a map from
@@ -23,7 +24,7 @@
        (filter #(= (fs/extname %) "cljs"))
        (map #(-> [(fpath->ns-name (fs/rel-path dirpath %))
                   (reader/read-code (fs/slurp %))]))
-       (into {"cljs.core" []})))
+       (into {'cljs.core []})))
 
 (defn namespace-dep-graph
   "Given a `sources` map like that returned by `load-sources`, returns a graph
@@ -34,7 +35,7 @@
           (dep/graph) (map (comp analyzer/parse-ns-decl first val) sources)))
 
 (defn precompiled-js [ns-name]
-  (when (= ns-name "cljs.core")
+  (when (= ns-name 'cljs.core)
     (fs/slurp "./resources/runtime.js")))
 
 (defn compile-forms
