@@ -298,9 +298,14 @@
 
 (defmethod analyze-list 'recur [env [_ & args :as form]]
   (if-let [recur-point (:recur-point env)]
-    (ast :recur form env
-      :recur-point recur-point
-      :args (mapv (partial analyze (expr-env env)) args))
+    (let [expected (count (:bindings recur-point))
+          actual (count args)]
+      (when-not (= expected actual)
+        (raise (str "Bad argument count to recur: expected " expected
+                    ", got " actual) form))
+      (ast :recur form env
+        :recur-point recur-point
+        :args (mapv (partial analyze (expr-env env)) args)))
     (raise "May only recur within loop." form)))
 
 (defmethod analyze-list 'set! [env [_ target val :as form]]
