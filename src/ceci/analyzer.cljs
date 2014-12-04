@@ -1,48 +1,19 @@
 (ns ceci.analyzer
   (:refer-clojure :exclude [defmacro macroexpand macroexpand-1])
   (:require [ceci.emitter :as emitter]
-            [ceci.util :refer [merge-meta name* ns* raise symbol* update warn]]))
+            [ceci.util :refer [merge-meta name* ns* raise update warn]]))
 
 (def ^:dynamic *state* nil)
-
-;; namespace management
-
-(defn require-ns
-  ([ns-spec required]
-    (require-ns ns-spec required nil))
-  ([ns-spec required alias]
-    (update ns-spec :aliases merge {alias (or alias required)})))
-
-(defn refer-symbols [ns-spec from-ns syms]
-  (update ns-spec :referred merge (zipmap syms (repeat from-ns))))
-
-(def core-defs
-  '[+ - * / = > >= < <= aget and apply aset assoc assoc-in atom boolean comp
-    concat conj cons constantly dec defmacro dissoc empty? filter first fnil
-    gensym get get-in hash hash-map identity inc interleave interpose into juxt
-    key keys keyword keyword? list list? map map? merge nil? not not= number?
-    or partial partition print println pr prn pr-str reduce remove reset! rest
-    reverse second seq seq? set set? str syntax-quote swap! update-in val vals
-    vec vector vector?])
-
-(defn create-ns-spec [ns-name]
-  (-> {:name ns-name :defs {}}
-      (require-ns 'cljs.core) (refer-symbols 'cljs.core core-defs)))
-
-(defn enter-ns [state {:keys [name] :as ns-spec}]
-  (-> state (assoc-in [:namespaces name] ns-spec) (assoc :current-ns name)))
 
 ;; symbol expansion
 
 (defn resolve-ns
   ([ns-name]
-    (let [{:keys [current-ns namespaces]} @*state*]
-      (resolve-ns ns-name (namespaces current-ns))))
+    (let [{:keys [current-ns], ns-named :namespaces} @*state*]
+      (resolve-ns ns-name (ns-named current-ns))))
   ([ns-name ns-spec]
-    (let [{:keys [namespaces]} @*state*]
-      (or (namespaces ns-name)
-          (when-let [ns-name* (get-in ns-spec [:aliases ns-name])]
-            (namespaces ns-name*))))))
+    (let [{ns-named :namespaces} @*state*]
+      (or (ns-named ns-name) (ns-named (get-in ns-spec [:aliases ns-name]))))))
 
 (defn canonicalize
   "Returns the canonical expansion of `sym` in the context of `ns-spec`. Uses
@@ -52,13 +23,15 @@
     (if-let [ns-name (ns* sym)]
       (if (= ns-name 'js)
         sym ; leave e.g. js/foo.bar untouched
-        (if-let [required-ns (:name (resolve-ns ns-name ns-spec))]
-          (symbol* required-ns (name sym))
+        (if-let [required-ns (resolve-ns ns-name ns-spec)]
+          (if (contains? (:defs required-ns) (symbol (name sym)))
+            (symbol (str (:name required-ns)) (name sym))
+            (raise "Symbol not defined in required namespace." sym))
           (raise "No such namespace." sym)))
       (if (contains? (:defs ns-spec) sym)
-        (symbol* (:name ns-spec) (name sym))
+        (symbol (str (:name ns-spec)) (name sym))
         (if-let [referred-ns (get-in ns-spec [:referred sym])]
-          (symbol* referred-ns (name sym))
+          (symbol (str referred-ns) (name sym))
           (raise "Symbol not defined in current namespace." sym))))))
 
 (defn define [state sym def-ast]
@@ -98,7 +71,15 @@
       (merge-meta expanded (meta form))
       (recur expanded (macroexpand-1 expanded)))))
 
-;; core macros
+;; core defs
+
+(def core-functions
+  '[+ - * / = > >= < <= aget and apply aset assoc assoc-in atom boolean comp
+    concat conj cons constantly dec dissoc empty? filter first fnil gensym get
+    get-in hash hash-map identity inc interleave interpose into juxt key keys
+    keyword keyword? list list? map map? merge nil? not not= number? or partial
+    partition print println pr prn pr-str reduce remove reset! rest reverse
+    second seq seq? set set? str swap! update-in val vals vec vector vector?])
 
 (defn defmacro [name & more]
   `(def ~(with-meta name {:macro true}) (fn* ~@more)))
@@ -122,15 +103,38 @@
       vector? (list 'vec (splice form))
       (raise "Unsupported collection type." form))))
 
-;; AST creation
+(def core-macros
+  {'defmacro defmacro, 'syntax-quote syntax-quote})
+
+(def core-defs
+  (merge (into {} (for [fname core-functions] [fname {:name fname}]))
+         (into {} (for [[mname macro] core-macros]
+                    [mname {:name mname :macro true :value macro}]))))
+
+;; namespace management
+
+(defn require-ns
+  ([ns-spec required]
+    (require-ns ns-spec required nil))
+  ([ns-spec required alias]
+    (update ns-spec :aliases merge {alias (or alias required)})))
+
+(defn refer-symbols [ns-spec from-ns syms]
+  (update ns-spec :referred merge (zipmap syms (repeat from-ns))))
+
+(defn create-ns-spec [ns-name]
+  (-> {:name ns-name :defs {}}
+      (require-ns 'cljs.core) (refer-symbols 'cljs.core (keys core-defs))))
+
+(defn enter-ns [state {:keys [name] :as ns-spec}]
+  (-> state (assoc-in [:namespaces name] ns-spec) (assoc :current-ns name)))
 
 (defn default-state []
-  (doto (atom {:current-ns nil :namespaces {}})
-    (swap! enter-ns (create-ns-spec 'user))
-    (swap! define 'cljs.core/defmacro
-      {:op :def :macro true :value defmacro})
-    (swap! define 'cljs.core/syntax-quote
-      {:op :def :macro true :value syntax-quote})))
+  (atom (-> {:current-ns nil
+             :namespaces {'cljs.core {:name 'cljs.core :defs core-defs}}}
+            (enter-ns (create-ns-spec 'user)))))
+
+;; AST creation
 
 (defn node-type [form]
   (condp #(%1 %2) form
@@ -165,7 +169,7 @@
 ;; special forms
 
 (defn analyze-var [env sym]
-  (ast :var (symbol* (:current-ns @*state*) (name sym)) env))
+  (ast :var (symbol (str (:current-ns @*state*)) (name sym)) env))
 
 (defn warn-def-shadows-referral [sym form]
   (when-let [ns (get-in @*state* [:namespaces (:current-ns @*state*) :referred sym])]
