@@ -229,36 +229,33 @@
     :then (analyze env then)
     :else (analyze env else)))
 
-(defn analyze-bindings [env bindings]
-  (assert (vector? bindings))
-  (assert (even? (count bindings)))
-  (loop [env env
-         analyzed []
-         bpairs (partition 2 bindings)]
-    (if-let [[bsym bval] (first bpairs)]
-      (let [init (analyze (expr-env env) bval)
-            local (assoc (analyze-local (expr-env env) bsym) :init init)]
-        (recur (assoc-in env [:locals bsym] local)
-               (conj analyzed [local init]) (rest bpairs)))
-      [env analyzed])))
+(defn analyze-bindings [env bvec]
+  (assert (vector? bvec))
+  (assert (even? (count bvec)))
+  (reduce (fn [[env bindings] [bsym bval]]
+            (let [init (analyze (expr-env env) bval)
+                  local (assoc (analyze-local (expr-env env) bsym) :init init)]
+              [(assoc-in env [:locals bsym] local)
+               (conj bindings (assoc local :op :binding))]))
+          [env []] (partition 2 bvec)))
 
-(defmethod analyze-list 'let* [env [_ bindings & body :as form]]
-  (let [[body-env bindings] (analyze-bindings env bindings)]
+(defmethod analyze-list 'let* [env [_ bvec & body :as form]]
+  (let [[body-env bindings] (analyze-bindings env bvec)]
     (ast :let form env
       :bindings bindings
       :body (analyze-block body-env body))))
 
-(defmethod analyze-list 'letfn* [env [_ bindings & body :as form]]
-  (let [bsyms (map first bindings)
+(defmethod analyze-list 'letfn* [env [_ bvec & body :as form]]
+  (let [bsyms (map first bvec)
         locals (zipmap bsyms (map (partial analyze-local env) bsyms))
         body-env (update env :locals merge locals)
-        fn-asts (map #(analyze (expr-env body-env) (cons 'fn* %)) bindings)]
+        inits (map #(analyze (expr-env body-env) (cons 'fn* %)) bvec)]
     (ast :letfn form env
-      :bindings (vec (zipmap (map locals bsyms) fn-asts))
+      :bindings (map #(assoc %1 :op :binding :init %2) (vals locals) inits)
       :body (analyze-block body-env body))))
 
-(defmethod analyze-list 'loop* [env [_ bindings & body :as form]]
-  (let [[body-env bindings] (analyze-bindings env bindings)
+(defmethod analyze-list 'loop* [env [_ bvec & body :as form]]
+  (let [[body-env bindings] (analyze-bindings env bvec)
         body-env (assoc body-env :recur-point {:bindings bindings})]
     (ast :loop form env
       :bindings bindings
@@ -349,11 +346,14 @@
 
 (defn resolve-ref [ast]
   (case (:op ast)
-    :local (or (resolve-ref (:init ast)) ast)
-    :var (let [sym (:form ast)
-               def (get-in @*state* [:namespaces (ns* sym) :defs (name* sym)])]
-           (or (resolve-ref (:init def)) ast))
-    ast))
+    (:binding :local)
+      (or (resolve-ref (:init ast)) ast)
+    :var
+      (let [sym (:form ast)
+            def (get-in @*state* [:namespaces (ns* sym) :defs (name* sym)])]
+        (or (resolve-ref (:init def)) ast))
+    ;else
+      ast))
 
 (defn valid-invoke-arity? [f arity]
   (case (:op f)

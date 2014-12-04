@@ -78,6 +78,9 @@
 
 (defmulti special->js :op)
 
+(defmethod special->js :binding [{:keys [name init]}]
+  (assign (ident (munge name)) (->js init)))
+
 (defmethod special->js :def [{:keys [var init]}]
   (assign (->js var) (->js init)))
 
@@ -122,20 +125,17 @@
 (defmethod special->js :js-var [{:keys [form]}]
   (ident (name form)))
 
-(defn bindings->js [bindings]
-  (map (fn [[k v]] (assign (->js k) (->js v))) bindings))
-
 (defmethod special->js :let [{:keys [bindings body]}]
-  (block (bindings->js bindings) (map ->js body)))
+  (block (map ->js bindings) (map ->js body)))
 
 (defmethod special->js :letfn [{:keys [bindings body]}]
-  (block (bindings->js bindings) (map ->js body)))
+  (block (map ->js bindings) (map ->js body)))
 
 (defmethod special->js :local [{:keys [name]}]
   (ident (munge name)))
 
 (defmethod special->js :loop [{:keys [bindings body env]}]
-  (let [body (block (bindings->js bindings)
+  (let [body (block (map ->js bindings)
                     {:type :WhileStatement :test (literal true)
                      :body (block (map ->js body) {:type :BreakStatement})})]
     (if (= (:context env) :statement) body (call (func [] body)))))
@@ -163,9 +163,8 @@
            (map define-if-undefined more))))
 
 (defmethod special->js :recur [{:keys [args recur-point]}]
-  (let [locals (mapv first (:bindings recur-point))
-        bindings (map (juxt locals (vec args)) (range (count args)))]
-    (block (bindings->js bindings) {:type :ContinueStatement})))
+  (block (map #(->js (assoc %1 :init %2)) (:bindings recur-point) args)
+         {:type :ContinueStatement}))
 
 (defmethod special->js :set! [{:keys [target val]}]
   (assign (->js target) (->js val)))
