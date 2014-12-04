@@ -1,7 +1,7 @@
 (ns ceci.analyzer
   (:refer-clojure :exclude [defmacro macroexpand macroexpand-1])
   (:require [ceci.emitter :as emitter]
-            [ceci.util :refer [merge-meta name* ns* raise update warn]]))
+            [ceci.util :refer [merge-meta raise update warn]]))
 
 (def ^:dynamic *state* nil)
 
@@ -20,10 +20,10 @@
   the currently active namespace if no `ns-spec` is provided."
   ([sym] (canonicalize sym (resolve-ns (:current-ns @*state*))))
   ([sym ns-spec]
-    (if-let [ns-name (ns* sym)]
-      (if (= ns-name 'js)
+    (if-let [ns-name (namespace sym)]
+      (if (= ns-name "js")
         sym ; leave e.g. js/foo.bar untouched
-        (if-let [required-ns (resolve-ns ns-name ns-spec)]
+        (if-let [required-ns (resolve-ns (symbol ns-name) ns-spec)]
           (if (contains? (:defs required-ns) (symbol (name sym)))
             (symbol (str (:name required-ns)) (name sym))
             (raise "Symbol not defined in required namespace." sym))
@@ -34,16 +34,17 @@
           (symbol (str referred-ns) (name sym))
           (raise "Symbol not defined in current namespace." sym))))))
 
-(defn define [state sym def-ast]
-  (let [ns-name (or (ns* sym) (:current-ns state))]
-    (assoc-in state [:namespaces ns-name :defs (name* sym)] def-ast)))
+(defn define [state sym var]
+  (let [ns (or (some-> sym namespace symbol) (:current-ns state))]
+    (assoc-in state [:namespaces ns :defs (symbol (name sym))] var)))
 
 ;; macroexpansion & syntax desugaring
 
 (defn expand-macro [form]
   (try (let [sym (canonicalize (first form))
-             def (get-in @*state* [:namespaces (ns* sym) :defs (name* sym)])]
-         (if (:macro def) (apply (:value def) (rest form)) form))
+             var (get-in @*state* [:namespaces (symbol (namespace sym))
+                                   :defs (symbol (name sym))])]
+         (if (:macro var) (apply (:value var) (rest form)) form))
        (catch :default _ form)))
 
 (defn desugar-new-syntax
@@ -107,9 +108,11 @@
   {'defmacro defmacro, 'syntax-quote syntax-quote})
 
 (def core-defs
-  (merge (into {} (for [fname core-functions] [fname {:name fname}]))
-         (into {} (for [[mname macro] core-macros]
-                    [mname {:name mname :macro true :value macro}]))))
+  (into {} (concat (for [fname core-functions]
+                     [fname {:ns 'cljs.core :name fname}])
+                   (for [[mname macro] core-macros]
+                     [mname {:ns 'cljs.core :name mname
+                             :value macro :macro true}]))))
 
 ;; namespace management
 
@@ -169,7 +172,7 @@
 ;; special forms
 
 (defn analyze-var [env sym]
-  (ast :var (symbol (str (:current-ns @*state*)) (name sym)) env))
+  (ast :var sym env :name (symbol (name sym)) :ns (:current-ns @*state*)))
 
 (defn warn-def-shadows-referral [sym form]
   (when-let [ns (get-in @*state* [:namespaces (:current-ns @*state*) :referred sym])]
@@ -179,20 +182,18 @@
   (warn-def-shadows-referral name form)
   (swap! *state* define name {}) ; HACK: ensure name is bound when analyzing init
   (let [init (analyze (expr-env env) init)
-        def (merge (ast :def form env
-                     :name name :var (analyze-var env name) :init init)
-                   (select-keys (meta name) [:doc :dynamic :macro :private])
-                   (when (:macro (meta name))
-                     {:value (js/eval (str "(" (emitter/emit init) ")"))}))]
-    (swap! *state* define name def)
-    def))
+        var (assoc (analyze-var env name) :init init)
+        var (cond-> var (:macro (:meta var))
+              (assoc :macro true
+                     :value (js/eval (str "(" (emitter/emit init) ")"))))]
+    (swap! *state* define name var)
+    (ast :def form env :name name :var var :init init)))
 
 (defmethod analyze-list 'deftype* [env [_ name fields & specs :as form]]
   (warn-def-shadows-referral name form)
-  (let [def (ast :deftype form env
-              :name name :var (analyze-var env name) :fields fields)]
-    (swap! *state* define name def)
-    def))
+  (let [var (analyze-var env name)]
+    (swap! *state* define name var)
+    (ast :deftype form env :name name :var var :fields fields)))
 
 (defmethod analyze-list 'do [env [_ & body :as form]]
   (ast :do form env
@@ -353,9 +354,8 @@
     (:binding :local)
       (or (resolve-ref (:init ast)) ast)
     :var
-      (let [sym (:form ast)
-            def (get-in @*state* [:namespaces (ns* sym) :defs (name* sym)])]
-        (or (resolve-ref (:init def)) ast))
+      (let [var (get-in @*state* [:namespaces (:ns ast) :defs (:name ast)])]
+        (or (resolve-ref (:init var)) ast))
     ;else
       ast))
 
@@ -384,9 +384,11 @@
     (analyze-const env sym)
     (if-let [local (get-in env [:locals sym])]
       (assoc-in local [:env :context] (:context env))
-      (if (= (ns* sym) 'js)
+      (if (= (namespace sym) "js")
         (ast :js-var sym env)
-        (ast :var (canonicalize sym) env)))))
+        (let [sym (canonicalize sym)]
+          (ast :var sym env
+            :ns (symbol (namespace sym)) :name (symbol (name sym))))))))
 
 (defn analyze
   ([form] (analyze {:context :statement :locals {} :quoted? false} form))

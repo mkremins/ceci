@@ -172,8 +172,8 @@
 (defmethod special->js :throw [{:keys [env exception]}]
   {:type :ThrowStatement :argument (->js exception)})
 
-(defmethod special->js :var [{:keys [form]}]
-  (ident (str (munge (namespace form)) "." (munge (name form)))))
+(defmethod special->js :var [{:keys [ns name]}]
+  (ident (str (munge ns) "." (munge name))))
 
 ;; collections
 
