@@ -261,8 +261,8 @@
 
 (defn read-with-source-info [reader]
   (let [[reader _] (advance-while whitespace? reader)]
-    (when-let [[reader form] (read-next-form reader)]
-      [reader (merge-meta form (source-info reader))])))
+    (when-let [[reader* form] (read-next-form reader)]
+      [reader* (merge-meta form (source-info reader))])))
 
 (defn read-all-forms [reader]
   (loop [reader reader forms []]
