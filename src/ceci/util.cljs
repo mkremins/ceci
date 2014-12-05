@@ -1,8 +1,5 @@
 (ns ceci.util)
 
-(defn mapk [f m]
-  (map (fn [[k v]] [(f k) v]) m))
-
 (defn update [m k f & args]
   (apply update-in m [k] f args))
 
