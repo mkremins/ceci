@@ -9,22 +9,18 @@
 
 ;; underlying reader data structure
 
-(defn line-num [reader]
-  (+ (:line reader) (:line-offset reader) 1))
-
-(defn col-num [reader]
-  (+ (inc (:column reader))
-     (when (= (:line reader) 0) (:column-offset reader))))
-
 (defn make-reader [source]
   {:lines (->> (str/split source #"\n") (mapv #(conj (mapv str %) "\n")))
    :line 0 :column 0})
 
+(defn source-info [{:keys [line line-offset column column-offset]}]
+  {:line (+ line line-offset 1)
+   :column (+ column (when (zero? line) column-offset) 1)})
+
 (defn make-nested-reader [parent-reader source]
-  (let [{:keys [line line-offset column column-offset]} parent-reader]
+  (let [{:keys [line column]} (source-info parent-reader)]
     (assoc (make-reader source)
-      :line-offset (+ line line-offset)
-      :column-offset (+ column (when (= line 0) column-offset)))))
+      :line-offset (dec line) :column-offset (dec column))))
 
 ;; basic reader interface
 
@@ -266,8 +262,7 @@
 (defn read-with-source-info [reader]
   (let [[reader _] (advance-while whitespace? reader)]
     (when-let [[reader form] (read-next-form reader)]
-      [reader (merge-meta form {:line (line-num reader)
-                                :column (col-num reader)})])))
+      [reader (merge-meta form (source-info reader))])))
 
 (defn read-all-forms [reader]
   (loop [reader reader forms []]
