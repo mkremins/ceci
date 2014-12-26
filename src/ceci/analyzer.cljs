@@ -202,17 +202,33 @@
 (defn analyze-local [env sym]
   (ast :local sym env :name (gensym (name sym))))
 
+(defn recursive? [form]
+  (when (seq? form)
+    (condp contains? (first form)
+      '#{recur} true
+      '#{do let* letfn*} (recursive? (last form))
+      '#{if} (some recursive? (take-last 2 form))
+      false)))
+
+(defn rewrite-recursive-method [[params & body]]
+  (let [gensyms (interleave params (repeatedly gensym))]
+    `(~(mapv second (partition 2 gensyms)) (loop* [~@gensyms] ~@body))))
+
 (defn analyze-method [env [params & body :as form]]
   (assert (every? symbol? params))
-  (let [variadic? (some #{'&} params)
-        params (vec (remove #{'&} params))
-        locals (zipmap params (map (partial analyze-local env) params))
-        env (-> env (update :locals merge locals) (assoc :context :return))]
-    (ast :fn-method form env
-      :params (map locals params)
-      :variadic? variadic?
-      :fixed-arity (count (if variadic? (butlast params) params))
-      :body (analyze-block env body))))
+  (let [variadic? (some #{'&} params)]
+    (if (recursive? (last body))
+      (if variadic?
+        (raise "Recursive variadic methods are not yet supported." form)
+        (recur env (rewrite-recursive-method form)))
+      (let [params (vec (remove #{'&} params))
+            locals (zipmap params (map (partial analyze-local env) params))
+            env (-> env (update :locals merge locals) (assoc :context :return))]
+        (ast :fn-method form env
+          :params (map locals params)
+          :variadic? variadic?
+          :fixed-arity (count (if variadic? (butlast params) params))
+          :body (analyze-block env body))))))
 
 (defmethod analyze-list 'fn* [env [_ & more :as form]]
   (let [[local more] (if (symbol? (first more))

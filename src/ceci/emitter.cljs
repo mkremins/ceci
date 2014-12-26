@@ -138,7 +138,7 @@
   (let [body (block (map ->js bindings)
                     {:type :WhileStatement :test (literal true)
                      :body (block (map ->js body) {:type :BreakStatement})})]
-    (if (= (:context env) :statement) body (call (func [] body)))))
+    (if (= (:context env) :expr) (call (func [] body)) body)))
 
 (defmethod special->js :new [{:keys [ctor args]}]
   (new* (->js ctor) (map ->js args)))
