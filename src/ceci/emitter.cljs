@@ -115,7 +115,7 @@
 
 (defmethod special->js :if [{:keys [env test then else]}]
   {:type (if (= (:context env) :expr) :ConditionalExpression :IfStatement)
-   :test (->js test)
+   :test (call "cljs.core.truth_" (->js test))
    :consequent (statement (->js then))
    :alternate (statement (->js else))})
 
