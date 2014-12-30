@@ -210,19 +210,21 @@
       '#{if} (some recursive? (take-last 2 form))
       false)))
 
-(defn rewrite-recursive-method [[params & body]]
-  (let [gensyms (interleave params (repeatedly gensym))]
-    `(~(mapv second (partition 2 gensyms)) (loop* [~@gensyms] ~@body))))
+(defn rewrite-recursive-method [params body variadic?]
+  (let [gensyms (interleave params (repeatedly gensym))
+        arglist (map second (partition 2 gensyms))
+        arglist (vec (if variadic?
+                       (concat (butlast arglist) ['& (last arglist)])
+                       arglist))]
+    `(~arglist (loop* [~@gensyms] ~@body))))
 
 (defn analyze-method [env [params & body :as form]]
   (assert (every? symbol? params))
-  (let [variadic? (some #{'&} params)]
+  (let [variadic? (some #{'&} params)
+        params (vec (remove #{'&} params))]
     (if (recursive? (last body))
-      (if variadic?
-        (raise "Recursive variadic methods are not yet supported." form)
-        (recur env (rewrite-recursive-method form)))
-      (let [params (vec (remove #{'&} params))
-            locals (zipmap params (map (partial analyze-local env) params))
+      (recur env (rewrite-recursive-method params body variadic?))
+      (let [locals (zipmap params (map (partial analyze-local env) params))
             env (-> env (update :locals merge locals) (assoc :context :return))]
         (ast :fn-method form env
           :params (map locals params)
