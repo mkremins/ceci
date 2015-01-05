@@ -67,9 +67,15 @@
   {:type :FunctionExpression
    :params params :body (apply block body)})
 
+(defn lexical-scope [& body]
+  (call (apply func [] body)))
+
 (defn member [obj prop & [computed?]]
   {:type :MemberExpression
    :object obj :property (maybe-ident prop) :computed computed?})
+
+(defn apply-to-args [f]
+  (call (member f "apply") (literal nil) (ident "arguments")))
 
 (defn new* [ctor & args]
   (assoc (apply call ctor args) :type :NewExpression))
@@ -92,7 +98,33 @@
 (defmethod special->js :do [{:keys [body]}]
   (block (map ->js body)))
 
-(defn method->js [{:keys [body fixed-arity params variadic?]}]
+(defn method->prop [{:keys [fixed-arity variadic?]}]
+  (str "cljs$core$IFn$_invoke$arity$" (if variadic? "variadic" fixed-arity)))
+
+(defn delegate-to-method [fname method]
+  (return (apply-to-args (member fname (method->prop method)))))
+
+(defn method->js-case [fname {:keys [fixed-arity variadic?] :as method}]
+  {:type :SwitchCase :test (when-not variadic? (literal fixed-arity))
+   :consequent [(delegate-to-method fname method)]})
+
+(defn wrapper-function [fname methods]
+  (func [] (if (> (count methods) 1)
+             {:type :SwitchStatement :lexical false
+              :discriminant (ident "arguments.length")
+              :cases (map (partial method->js-case fname) methods)}
+             (delegate-to-method fname (first methods)))))
+
+(defmethod special->js :fn [{:keys [methods]}]
+  (let [methods-map (zipmap (map (comp ident str) (repeatedly gensym)) methods)
+        fname (ident (str (gensym)))]
+    (lexical-scope
+      (map #(assign (key %) (special->js (val %))) methods-map)
+      (assign fname (wrapper-function fname methods))
+      (map #(assign (member fname (method->prop (val %))) (key %)) methods-map)
+      (return fname))))
+
+(defmethod special->js :fn-method [{:keys [body fixed-arity params variadic?]}]
   (func (map ->js (take fixed-arity params))
         (when variadic?
           (assign (->js (last params))
@@ -100,18 +132,6 @@
                         (call "Array.prototype.slice.call"
                               (ident "arguments") (literal fixed-arity)))))
         (map ->js body)))
-
-(defn method->js-case [{:keys [fixed-arity variadic?] :as method}]
-  {:type :SwitchCase :test (when-not variadic? (literal fixed-arity))
-   :consequent [(return (call (member (method->js method) "apply")
-                              (literal nil) (ident "arguments")))]})
-
-(defmethod special->js :fn [{:keys [methods]}]
-  (if (= (count methods) 1)
-    (method->js (first methods))
-    (func [] {:type :SwitchStatement :lexical false
-              :discriminant (ident "arguments.length")
-              :cases (map method->js-case methods)})))
 
 (defmethod special->js :if [{:keys [env test then else]}]
   {:type (if (= (:context env) :expr) :ConditionalExpression :IfStatement)
