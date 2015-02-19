@@ -1,6 +1,6 @@
 (ns ceci.reader
   (:refer-clojure :exclude [*data-readers* read-string])
-  (:require [ceci.util :refer [merge-meta metadatable? update]]
+  (:require [ceci.util :refer [merge-meta metadatable?]]
             [clojure.string :as str]
             [clojure.walk :as walk]))
 

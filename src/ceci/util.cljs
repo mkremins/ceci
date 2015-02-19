@@ -1,8 +1,5 @@
 (ns ceci.util)
 
-(defn update [m k f & args]
-  (apply update-in m [k] f args))
-
 (def metadatable? (some-fn coll? symbol?))
 
 (defn merge-meta [form metadata]
@@ -22,3 +19,6 @@
 (defn warn
   ([msg] (println (str "Warning: " msg)))
   ([msg form] (warn (str msg "\n" (source-info form)))))
+
+(defn take-when [pred [x & xs :as coll]]
+  (if (pred x) [x xs] [nil coll]))
