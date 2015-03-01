@@ -1,7 +1,9 @@
 (ns ceci.analyzer
   (:refer-clojure :exclude [defmacro macroexpand macroexpand-1])
   (:require [ceci.emitter :as emitter]
-            [ceci.util :refer [merge-meta raise take-when warn]]))
+            [ceci.util :refer [merge-meta raise take-when warn]]
+            [clojure.set :as set]
+            [clojure.walk :as walk]))
 
 (def ^:dynamic *state* nil)
 
@@ -72,6 +74,24 @@
       (merge-meta expanded (meta form))
       (recur expanded (macroexpand-1 expanded)))))
 
+(defn find-auto-gensyms [form]
+  (cond (coll? form) (apply set/union (map find-auto-gensyms form))
+        (and (symbol? form)
+             (not (namespace form))
+             (= (last (name form)) \#)) #{form}
+        :else #{}))
+
+(defn desugar-auto-gensym [sym]
+  (let [s (name sym)]
+    (symbol (str (gensym (str (subs s 0 (dec (count s))) "__")) "__auto__"))))
+
+(defn desugar-auto-gensyms
+  "Replaces auto-gensyms (e.g. `foo#`) with gensyms (e.g. `foo__1000__auto__`)
+  within `form`. Part of the standard behavior of `syntax-quote`."
+  [form]
+  (let [syms (find-auto-gensyms form)]
+    (walk/postwalk-replace (zipmap syms (map desugar-auto-gensym syms)) form)))
+
 ;; core defs
 
 (def core-functions
@@ -86,7 +106,8 @@
   `(def ~(with-meta name {:macro true}) (fn* ~@more)))
 
 (defn syntax-quote [form]
-  (let [unquote? (every-pred list? (comp #{'unquote} first))
+  (let [form (desugar-auto-gensyms form)
+        unquote? (every-pred list? (comp #{'unquote} first))
         unquote-splicing? (every-pred list? (comp #{'unquote-splicing} first))
         splice (fn [forms]
                  (cons 'concat
